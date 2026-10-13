@@ -1,0 +1,112 @@
+from moveit_configs_utils import MoveItConfigsBuilder
+from moveit_configs_utils.launches import (
+    generate_move_group_launch,
+    generate_moveit_rviz_launch,
+    generate_rsp_launch,
+    generate_static_virtual_joint_tfs_launch,
+)
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction, LogInfo
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node, SetRemap
+from launch_ros.parameter_descriptions import ParameterValue
+
+
+def generate_launch_description():
+    ip = LaunchConfiguration("ip")
+    auto_enable = LaunchConfiguration("auto_enable")
+    servo_lpf_cutoff_hz = LaunchConfiguration("servo_lpf_cutoff_hz")
+    payload_mass_kg = LaunchConfiguration("payload_mass_kg")
+    joint_states_topic = LaunchConfiguration("joint_states_topic")
+    trajectory_action = LaunchConfiguration("trajectory_action")
+
+    moveit_config = MoveItConfigsBuilder(
+        "jaka_zu12", package_name="jaka_zu12_moveit_config"
+    ).to_moveit_configs()
+
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "ip",
+                default_value="10.5.5.100",
+                description="IPv4 address of the physical JAKA controller",
+            ),
+            DeclareLaunchArgument(
+                "auto_enable",
+                default_value="false",
+                choices=["true", "false"],
+                description="Allow automatic power-on and enable",
+            ),
+            DeclareLaunchArgument(
+                "servo_lpf_cutoff_hz",
+                default_value="0.5",
+                description="JAKA joint-servo LPF cutoff in Hz",
+            ),
+            DeclareLaunchArgument(
+                "payload_mass_kg",
+                default_value="0.0",
+                description="External tool payload mass in kg",
+            ),
+            DeclareLaunchArgument(
+                "joint_states_topic",
+                default_value="/joint_states",
+                description="Joint-state topic used by JAKA and MoveIt",
+            ),
+            DeclareLaunchArgument(
+                "trajectory_action",
+                default_value="/jaka_zu12_controller/follow_joint_trajectory",
+                description="FollowJointTrajectory action used by JAKA and MoveIt",
+            ),
+            LogInfo(
+                msg=[
+                    "Starting physical JAKA ZU12 at ",
+                    ip,
+                    ". Automatic enable: ",
+                    auto_enable,
+                ]
+            ),
+            GroupAction(
+                [
+                    SetRemap(src="/joint_states", dst=joint_states_topic),
+                    SetRemap(
+                        src="/jaka_zu12_controller/follow_joint_trajectory",
+                        dst=trajectory_action,
+                    ),
+                    Node(
+                        package="jaka_planner",
+                        executable="moveit_server",
+                        name="moveit_server",
+                        output="screen",
+                        parameters=[
+                            {
+                                "ip": ip,
+                                "model": "zu12",
+                                "auto_enable": ParameterValue(
+                                    auto_enable, value_type=bool
+                                ),
+                                "servo_lpf_cutoff_hz": ParameterValue(
+                                    servo_lpf_cutoff_hz, value_type=float
+                                ),
+                                "configure_payload": True,
+                                "payload_mass_kg": ParameterValue(
+                                    payload_mass_kg, value_type=float
+                                ),
+                                "payload_centroid_x_mm": 0.0,
+                                "payload_centroid_y_mm": 0.0,
+                                "payload_centroid_z_mm": 0.0,
+                            }
+                        ],
+                    ),
+                    generate_static_virtual_joint_tfs_launch(moveit_config),
+                    generate_rsp_launch(moveit_config),
+                    generate_move_group_launch(moveit_config),
+                    generate_moveit_rviz_launch(moveit_config),
+                    Node(
+                        package="jaka_zu12_moveit_config",
+                        executable="add_environment.py",
+                        output="screen",
+                    ),
+                ]
+            ),
+        ]
+    )
