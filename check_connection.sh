@@ -46,15 +46,12 @@ else
 fi
 
 set +u
-source /opt/ros/humble/setup.bash
-if [[ -f "$workspace_dir/install/setup.bash" ]]; then
-  source "$workspace_dir/install/setup.bash"
-fi
+source "$workspace_dir/setup_isaac.bash"
 set -u
 
 for package in jaka_planner jaka_zu12_moveit_config; do
   ros2 pkg prefix "$package" >/dev/null || {
-    echo "Missing package ${package}. Run ./build.sh first." >&2
+    echo "Missing package ${package}. Run ./build.sh --real first." >&2
     exit 1
   }
 done

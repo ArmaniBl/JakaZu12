@@ -1,5 +1,40 @@
 # JakaZu12
 
+Отчёты о выполненных работах: [docs/reports/README.md](docs/reports/README.md).
+
+Камера и облако точек из Isaac Sim: [настройка, исправления и проверка](docs/CAMERA.md).
+
+**Веб-интерфейс:** запустите `./run_web.sh` в WSL и откройте
+**http://localhost:8080** в браузере Windows. Выбор грани/ребра на модели,
+параметры, предпросмотр, планирование, выполнение и остановка доступны в одной панели.
+После первого добавления интерфейса выполните `./build.sh`.
+Инструкция: [docs/WEB_UI.md](docs/WEB_UI.md).
+
+Ветка `welding` настроена для **Isaac Sim на Windows 11 + ROS 2 Jazzy в WSL2 Ubuntu 24.04**.
+Для симуляции используется отдельная модель UR10, группа MoveIt `ur_manipulator`.
+Инструкция и результаты проверки: [docs/ISAAC_SIM.md](docs/ISAAC_SIM.md).
+
+```bash
+cd ~/jaka_zu12_welding
+./build.sh
+./run_isaac.sh
+```
+
+Запуск с заготовкой `30 × 30 × 20 см` в `world: (-1, 0, 0.1)`:
+`./run_isaac_with_object.sh` (объект в MoveIt/RViz, с проверкой коллизий).
+
+Имитация сварки по выбранной грани: `./weld.sh --face z_plus` — предпросмотр,
+`./weld.sh --face z_plus --mode plan` — планирование,
+`./weld.sh --face z_plus --mode execute` — выполнение в Isaac.
+Выбор участка и параметры: [docs/WELDING.md](docs/WELDING.md).
+
+`./run_sim.sh` запускает ту же конфигурацию Isaac. Сначала включите Play в Isaac Sim.
+Добавлены цилиндры, mesh-объекты и режим физического JAKA под Jazzy:
+[инструкция](docs/SHAPES_AND_REAL_ROBOT.md).
+Сборка физического режима: `./build.sh --real`; панель: `./run_web.sh --robot jaka_real`.
+Ниже сохранена историческая документация JAKA/Humble; для текущей ветки используйте
+инструкцию выше. Обычный `build.sh` собирает только пакет симуляции UR10.
+
 Готовый workspace для JAKA ZU12 через ROS 2 Humble, MoveIt 2 и RViz.
 Включает драйвер JAKA SDK, URDF, меши, симуляцию, запуск физического робота,
 коллизии окружения (пол, две гусеницы, блок питания) и сохранение журналов.

@@ -1,0 +1,13 @@
+{
+  "captured_at_utc": "2026-11-05T22:24:24.366844+00:00",
+  "source_topic": "/joint_states",
+  "units": "rad",
+  "joint_positions": {
+    "shoulder_pan_joint": 0.0,
+    "shoulder_lift_joint": -2.0944,
+    "elbow_joint": -1.0472,
+    "wrist_1_joint": -1.5708,
+    "wrist_2_joint": 1.5708,
+    "wrist_3_joint": 0.0
+  }
+}

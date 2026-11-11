@@ -29,9 +29,9 @@ if [[ $confirmation != RECOVER ]]; then
 fi
 
 set +u
-source /opt/ros/humble/setup.bash
-source "$workspace_dir/install/setup.bash"
+source "$workspace_dir/setup_isaac.bash"
 set -u
+export LD_LIBRARY_PATH="$workspace_dir/src/jaka_planner/lib:${LD_LIBRARY_PATH:-}"
 
 exec python3 "$workspace_dir/log_run.py" recovery -- \
   ros2 run jaka_planner recover_robot "$robot_ip"

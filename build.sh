@@ -4,11 +4,18 @@ set -euo pipefail
 workspace_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 set +u
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 set -u
 
 cd "$workspace_dir"
-colcon build --symlink-install --cmake-args -DBUILD_TESTING=OFF
+packages=(ur10_isaac_moveit_config)
+if [[ ${1:-} == --real ]]; then
+  packages+=(jaka_description jaka_planner jaka_zu12_moveit_config)
+elif [[ $# != 0 ]]; then
+  echo 'Usage: ./build.sh [--real]' >&2
+  exit 2
+fi
+colcon build --base-paths src --symlink-install --packages-select "${packages[@]}" --cmake-args -DBUILD_TESTING=OFF
 
 echo
 echo "Build complete. In each new terminal run:"

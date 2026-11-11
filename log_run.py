@@ -16,7 +16,7 @@ import tempfile
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["real", "simulation", "recovery"])
+    parser.add_argument("mode", choices=["real", "simulation", "recovery", "isaac"])
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command
@@ -28,6 +28,7 @@ def main():
     workspace = Path(__file__).resolve().parent
     root = workspace / "diagnostics"
     root.mkdir(parents=True, exist_ok=True)
+    (root / "COLCON_IGNORE").touch()
     session = Path(tempfile.mkdtemp(
         prefix=datetime.now().strftime("%Y-%m-%d_%H-%M-%S_") + args.mode + "_",
         dir=root,
@@ -46,6 +47,9 @@ def main():
         "sha256": {},
     }
     for relative in (
+        "src/ur10_isaac_moveit_config",
+        "setup_isaac.bash",
+        "run_isaac.sh",
         "src/jaka_zu12_moveit_config/config",
         "src/jaka_zu12_moveit_config/launch/real_robot.launch.py",
         "src/jaka_zu12_moveit_config/launch/simulation.launch.py",
@@ -83,7 +87,9 @@ def main():
         metadata["last_signal"] = signum
         if process is not None and process.poll() is None:
             try:
-                os.killpg(process.pid, signum)
+                # ros2 launch forwards signals to its nodes itself. Signalling
+                # its whole group delivers SIGINT twice during node cleanup.
+                process.send_signal(signum)
             except ProcessLookupError:
                 pass
 

@@ -1,0 +1,71 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid 10 cm
+      Enabled: true
+      Cell Size: 0.1
+      Plane Cell Count: 30
+      Alpha: 0.25
+      Color: 110; 125; 145
+      Reference Frame: world
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Live camera - depth_pcl
+      Enabled: true
+      Topic:
+        Value: /depth_pcl
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 1
+      Position Transformer: XYZ
+      Color Transformer: AxisColor
+      Axis: Z
+      Autocompute Value Bounds:
+        Value: false
+        Min Value: 0
+        Max Value: 0.22
+      Use Fixed Frame: true
+      Style: Points
+      Size (Pixels): 2
+      Decay Time: 0
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Name: Camera optical frame
+      Enabled: true
+      Frame Timeout: 15
+      Marker Scale: 0.15
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+      Value: true
+  Global Options:
+    Background Color: 24; 29; 40
+    Fixed Frame: world
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Camera scan
+      Target Frame: world
+      Distance: 1.8
+      Focal Point:
+        X: -1
+        Y: 0
+        Z: 0.25
+      Pitch: 0.65
+      Yaw: 0.8
+  Value: true
+Window Geometry:
+  Width: 1280
+  Height: 850
