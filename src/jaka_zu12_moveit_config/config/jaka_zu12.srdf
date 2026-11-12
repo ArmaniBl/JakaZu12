@@ -28,7 +28,7 @@
         <joint name="joint_6" value="0"/>
     </group_state>
     <group_state name="pose_1" group="jaka_zu12">
-        <joint name="joint_1" value="0"/>
+        <joint name="joint_1" value="-1.5707963267948966"/>
         <joint name="joint_2" value="1.5707"/>
         <joint name="joint_3" value="-1.5707"/>
         <joint name="joint_4" value="1.5707"/>

@@ -56,6 +56,8 @@ class Settings:
         result = cls(**defaults)
         if not isinstance(result.object, str) or not 1 <= len(result.object) <= 128:
             raise ValueError("Укажите ID объекта")
+        if result.object == 'floor':
+            raise ValueError('floor is reserved for the collision floor')
         if result.selection not in ("face", "edge"):
             raise ValueError("Выберите грань или ребро")
         for name in (result.face, result.edge):

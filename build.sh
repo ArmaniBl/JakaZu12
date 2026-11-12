@@ -4,7 +4,7 @@ set -euo pipefail
 workspace_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 set +u
-source /opt/ros/jazzy/setup.bash
+source "$workspace_dir/setup_isaac.bash"
 set -u
 
 cd "$workspace_dir"

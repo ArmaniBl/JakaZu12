@@ -29,6 +29,8 @@ def main():
     parser.add_argument('--id', default='welding_workpiece')
     parser.add_argument('--clear-markers', action='store_true', help='Clear obsolete welding preview in RViz')
     args = parser.parse_args(rclpy.utilities.remove_ros_args(sys.argv)[1:])
+    if args.id == "floor":
+        parser.error("floor is reserved for the collision floor")
     if not all(math.isfinite(v) for v in args.center+args.quaternion):
         parser.error('Pose must be finite')
     pose = Pose()

@@ -2,8 +2,8 @@
 
 import rclpy
 from geometry_msgs.msg import Pose
-from moveit_msgs.msg import CollisionObject, PlanningScene
-from moveit_msgs.srv import ApplyPlanningScene
+from moveit_msgs.msg import CollisionObject, ObjectColor, PlanningScene, PlanningSceneComponents
+from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene
 from rclpy.node import Node
 from shape_msgs.msg import SolidPrimitive
 
@@ -12,6 +12,7 @@ class EnvironmentLoader(Node):
     def __init__(self):
         super().__init__("jaka_zu12_environment_loader")
         self.client = self.create_client(ApplyPlanningScene, "/apply_planning_scene")
+        self.scene_client = self.create_client(GetPlanningScene, "/get_planning_scene")
         self.timer = self.create_timer(0.5, self.try_apply_scene)
         self.request_sent = False
 
@@ -37,23 +38,48 @@ class EnvironmentLoader(Node):
         return collision_object
 
     def try_apply_scene(self):
-        if self.request_sent or not self.client.service_is_ready():
+        if (self.request_sent or not self.client.service_is_ready()
+                or not self.scene_client.service_is_ready()):
             return
+        self.request_sent = True
+        request = GetPlanningScene.Request()
+        request.components.components = PlanningSceneComponents.WORLD_OBJECT_NAMES
+        self.scene_client.call_async(request).add_done_callback(self.replace_environment)
 
+    def replace_environment(self, future):
+        try:
+            objects = future.result().scene.world.collision_objects
+        except Exception as error:
+            self.get_logger().error(f"Failed to read environment: {error}")
+            rclpy.shutdown()
+            return
         scene = PlanningScene()
         scene.is_diff = True
-        scene.world.collision_objects = [
-            # The floor occupies Z=[-0.10, 0.0], below the support surface.
-            self.make_box("floor", [6.0, 6.0, 0.10], 0.0, 0.0, z=-0.05),
-            # X points forward and Y points left from the robot base.
-            self.make_box(
-                "front_track", [0.30, 1.60, 0.15], 0.65, -0.50
-            ),
-            self.make_box(
-                "rear_track", [0.30, 1.60, 0.15], -0.47, -0.50
-            ),
-            self.make_box("power_supply", [0.40, 0.26, 0.13], 0.10, -1.17),
-        ]
+        for existing in objects:
+            removal = CollisionObject()
+            removal.header.frame_id = "world"
+            removal.id = existing.id
+            removal.operation = CollisionObject.REMOVE
+            scene.world.collision_objects.append(removal)
+        # Collision obstacle only; the welding UI/CLI reserve the ID floor.
+        # Rotated 90 degrees right around the base centre.
+        # Metres: X=[-0.31, 0.49], Y=[-1.065, 0.135]; top Z=0.
+        scene.world.collision_objects.append(
+            self.make_box("floor", [0.80, 1.20, 0.10], 0.09, -0.465, z=-0.05)
+        )
+        # A 15 cm cube, rotated 90 degrees right around the base, resting on Z=0.
+        scene.world.collision_objects.append(
+            self.make_box("welding_workpiece", [0.15, 0.15, 0.15], 0.0, -0.60)
+        )
+
+        # Explicit per-object colors persist in MoveIt's monitored scene.
+        # Match add_workpiece.py so replacements keep the workpiece color.
+        for object_id, rgb in (("floor", (0.45, 0.48, 0.52)),
+                               ("welding_workpiece", (0.9, 0.5, 0.1))):
+            color = ObjectColor(id=object_id)
+            color.color.r, color.color.g, color.color.b = rgb
+            color.color.a = 1.0
+            scene.object_colors.append(color)
 
         request = ApplyPlanningScene.Request()
         request.scene = scene
@@ -71,8 +97,7 @@ class EnvironmentLoader(Node):
 
         if success:
             self.get_logger().info(
-                "Added floor, front_track, rear_track and power_supply to the MoveIt "
-                "planning scene"
+                "Added 1.20 x 0.80 m collision floor (top Z=0) and a 0.15 m welding cube at (0, -0.60, 0.075)"
             )
         else:
             self.get_logger().error("MoveIt rejected the environment planning scene")

@@ -1,5 +1,22 @@
 # JakaZu12
 
+Physical JAKA on Ubuntu 22.04 / ROS 2 Humble is also supported by the
+build and environment scripts. ROS_DISTRO can select the installed distribution.
+
+```bash
+./build.sh --real
+./check_connection.sh 10.5.5.100
+./run_real.sh 10.5.5.100
+# Separate terminal:
+./run_web.sh --port 8090 --robot jaka_real
+```
+
+Automatic drive enable is disabled. Before execution, configure the measured
+TCP, tool mass/centroid and workpiece pose. The dependency installer and Isaac
+UR10 instructions below target Jazzy; Humble needs the corresponding
+ros-humble-* dependencies.
+
+
 Отчёты о выполненных работах: [docs/reports/README.md](docs/reports/README.md).
 
 Камера и облако точек из Isaac Sim: [настройка, исправления и проверка](docs/CAMERA.md).

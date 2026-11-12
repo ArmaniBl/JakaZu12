@@ -27,6 +27,14 @@ def planar():
 
 
 class ShapesTests(unittest.TestCase):
+    def test_floor_is_not_a_workpiece(self):
+        floor = CollisionObject()
+        floor.id = 'floor'
+        with self.assertRaisesRegex(ValueError, 'collision obstacle'):
+            object_geometry(floor)
+        with self.assertRaisesRegex(ValueError, 'reserved'):
+            Settings.parse({'object': 'floor'})
+
     def test_cylinder_circle_and_partial_arc(self):
         g = cylinder_geometry([.2, .15], [-1, 0, .1])
         c = g.contour('z_plus')

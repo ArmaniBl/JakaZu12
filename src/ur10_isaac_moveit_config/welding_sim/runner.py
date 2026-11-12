@@ -47,6 +47,8 @@ def pose_transform(pose):
 
 
 def object_geometry(obj, frame='world'):
+    if obj.id == 'floor':
+        raise ValueError('floor is a collision obstacle, not a welding workpiece')
     if obj.header.frame_id != frame:
         raise ValueError(f'Workpiece must be expressed in the {frame} frame')
     if obj.planes or len(obj.primitives)+len(obj.meshes) != 1:
@@ -307,8 +309,9 @@ class WeldingRunner(Node):
         request.avoid_collisions = True
         request.max_velocity_scaling_factor = self.args.scaling
         request.max_acceleration_scaling_factor = self.args.scaling
-        request.cartesian_speed_limited_link = profile_of(self).tip
-        request.max_cartesian_speed = self.args.speed
+        if hasattr(request, "cartesian_speed_limited_link"):
+            request.cartesian_speed_limited_link = profile_of(self).tip
+            request.max_cartesian_speed = self.args.speed
         result = self.call(GetCartesianPath, "/compute_cartesian_path", request)
         self.report["last_cartesian_fraction"] = result.fraction
         if result.error_code.val != 1 or result.fraction < 1.0 - 1e-9:
