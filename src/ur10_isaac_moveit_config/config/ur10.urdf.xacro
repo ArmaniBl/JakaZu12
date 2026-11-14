@@ -1,6 +1,11 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ur10">
+  <xacro:arg name="torch" default="true"/>
   <xacro:include filename="$(find ur_description)/urdf/ur.urdf.xacro"/>
+  <xacro:include filename="welding_torch.xacro"/>
+  <xacro:if value="$(arg torch)">
+    <xacro:welding_torch parent="tool0"/>
+  </xacro:if>
   <ros2_control name="IsaacUR10" type="system">
     <hardware>
       <plugin>joint_state_topic_hardware_interface/JointStateTopicSystem</plugin>

@@ -1,0 +1,21 @@
+{
+  "description": "Simulation estimates, not measured JAKA payload data. Replace densities or provide measured mass.",
+  "measured_tool_mass_kg": null,
+  "density_kg_m3": {
+    "PrintedBlack": 1250,
+    "Steel": 7850,
+    "DriveDark": 1250,
+    "HoseRubber": 1100,
+    "ShellBlack": 1100,
+    "GripRubber": 1100,
+    "TriggerRed": 1100,
+    "NeckBlack": 1200,
+    "Chrome": 7850,
+    "Copper": 8960,
+    "SpringSteel": 7850
+  },
+  "damping_ratio": 1.0,
+  "physics_hz": 120,
+  "solver_position_iterations": 16,
+  "solver_velocity_iterations": 4
+}

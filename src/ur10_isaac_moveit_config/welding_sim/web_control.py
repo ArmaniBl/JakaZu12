@@ -17,6 +17,7 @@ import uuid
 from .geometry import FACES, box_edges, face_contour, select_edges
 from .geometry import WorkpieceGeometry
 from .profiles import ISAAC
+from .orientation import tilted_orientation
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -34,6 +35,11 @@ class Settings:
     speed: float = 0.02
     scaling: float = 0.05
     roll: float = 0.0
+    orientation_mode: str = 'auto'
+    tilt: float = 0.0
+    tilt_direction: float = 0.0
+    max_tilt: float = 45.0
+    orientation_timeout: float = 120.0
 
     @classmethod
     def parse(cls, data):
@@ -44,7 +50,8 @@ class Settings:
         if unknown:
             raise ValueError("Неизвестные настройки: " + ", ".join(sorted(unknown)))
         defaults.update(data)
-        for name in ("begin", "end", "offset", "clearance", "step", "speed", "scaling", "roll"):
+        for name in ("begin", "end", "offset", "clearance", "step", "speed", "scaling", "roll",
+                     'tilt','tilt_direction','max_tilt','orientation_timeout'):
             if isinstance(defaults[name], bool):
                 raise ValueError(f"Некорректное число: {name}")
             try:
@@ -54,6 +61,9 @@ class Settings:
             if not math.isfinite(defaults[name]):
                 raise ValueError(f"Некорректное число: {name}")
         result = cls(**defaults)
+        if (result.orientation_mode not in ('auto','fixed') or not 0<=result.tilt<=result.max_tilt<=60
+                or not 5<=result.orientation_timeout<=300):
+            raise ValueError('Наклон: 0 ≤ заданный ≤ максимальный ≤ 60°; время подбора: 5–300 с')
         if not isinstance(result.object, str) or not 1 <= len(result.object) <= 128:
             raise ValueError("Укажите ID объекта")
         if result.object == 'floor':
@@ -79,8 +89,9 @@ class Settings:
         args = [sys.executable, str(executable), "--mode", mode, "--object", self.object,
                 "--output", str(output)]
         args += ["--face", self.face] if self.selection == "face" else ["--edge", self.edge]
-        for name in ("begin", "end", "offset", "clearance", "step", "speed", "scaling", "roll"):
-            args.extend(["--"+name, str(getattr(self, name))])
+        for name in ("begin", "end", "offset", "clearance", "step", "speed", "scaling", "roll",
+                     'orientation_mode','tilt','tilt_direction','max_tilt','orientation_timeout'):
+            args.extend(["--"+name.replace('_','-'), str(getattr(self, name))])
         return args
 
 
@@ -94,6 +105,7 @@ def geometry_payload(edges, settings, demo=False):
     selected = geometry.contour(face) if settings.selection == 'face' else geometry.select([edge])[0]
     seam, tool, orientation = selected.path(settings.begin, settings.end, settings.offset,
                                            settings.step, math.radians(settings.roll))
+    orientation=tilted_orientation(orientation,settings.tilt,settings.tilt_direction)
     return {"demo": demo, "shape": geometry.shape, 'selected_face': face, 'selected_edge': edge,
             "faces": [{"id": c.id.split(":", 1)[1], "vertices": c.vertices[:-1].tolist(),
                                      "normal": c.outward.tolist(), "length": c.length} for c in faces],
@@ -160,7 +172,9 @@ class Controller:
             self.log(source, text)
             if job:
                 with self.lock:
-                    if "Planning " in text:
+                    if 'Orientation search:' in text:
+                        job['phase']='Подбор наклона и поворота горелки'
+                    elif "Planning " in text:
                         job["phase"] = "Планирование маршрута"
                     elif "Preview published" in text:
                         job["phase"] = "Предпросмотр в RViz"
@@ -183,6 +197,7 @@ class Controller:
                 job["report"] = bool(report)
                 job["result"] = report.get("status") if report else None
                 job["error"] = report.get("error") if report else None
+                job['chosen_orientation'] = report.get('chosen_orientation') if report else None
                 job["state"] = ("cancelled" if job.get("stopping") and (not report or report.get("status") == "interrupted")
                                 else "succeeded" if code == 0 and report and report.get("status") in ("preview", "planned", "executed")
                                 else "failed")
@@ -301,7 +316,8 @@ class Controller:
                 if self.scene_process and self.scene_process.poll() is None or self.status()["health"]["moveit"]:
                     raise ValueError("Сцена уже запущена; панель подключается к ней автоматически")
                 self.scene_process = subprocess.Popen(
-                    ["bash", str(self.workspace / "run_isaac_with_object.sh"), f"rviz:={'true' if rviz else 'false'}"],
+                    ["bash", str(self.workspace / "run_isaac_with_object.sh"), f"rviz:={'true' if rviz else 'false'}"]
+                    + (['torch:=true'] if self.profile.tip == 'welding_tcp' else []),
                     cwd=self.workspace, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, errors="replace", start_new_session=True)
                 self.scene_stopping = False

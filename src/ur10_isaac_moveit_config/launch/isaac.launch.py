@@ -9,8 +9,8 @@ from moveit_configs_utils import MoveItConfigsBuilder
 def generate_launch_description():
     config = (
         MoveItConfigsBuilder("ur10", package_name="ur10_isaac_moveit_config")
-        .robot_description(file_path="config/ur10.urdf.xacro", mappings={"name": "ur10", "ur_type": "ur10"})
-        .robot_description_semantic(file_path="config/ur10.srdf")
+        .robot_description(file_path="config/ur10.urdf.xacro", mappings={"name": "ur10", "ur_type": "ur10", "torch": LaunchConfiguration('torch')})
+        .robot_description_semantic(file_path="config/ur10.srdf.xacro", mappings={'torch': LaunchConfiguration('torch')})
         .robot_description_kinematics(file_path="config/kinematics.yaml")
         .joint_limits(file_path="config/joint_limits.yaml")
         .trajectory_execution(file_path="config/moveit_controllers.yaml")
@@ -21,6 +21,11 @@ def generate_launch_description():
     # Support scenes without /clock. Restamp only received states for MoveIt/TF.
     states = [("/joint_states", "/ur10/joint_states")]
     return LaunchDescription([
+        DeclareLaunchArgument('floor_z',default_value='0.0',description='Collision floor top in world, meters'),
+        Node(package='ur10_isaac_moveit_config',executable='add_floor.py',output='screen',
+             arguments=['--top',LaunchConfiguration('floor_z')]),
+        DeclareLaunchArgument('torch', default_value='true', choices=['true', 'false'],
+                              description='Attach welding torch and use welding_tcp as the chain tip'),
         DeclareLaunchArgument("rviz", default_value="true", choices=["true", "false"]),
         DeclareLaunchArgument("workpiece", default_value="false", choices=["true", "false"],
                               description="Add the 30 x 30 x 20 cm welding workpiece to MoveIt"),

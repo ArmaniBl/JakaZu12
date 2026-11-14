@@ -28,6 +28,19 @@ from .web_control import Controller, Settings
 from .robot_view import robot_snapshot
 
 
+def pending_request(future, requested, now, timeout=3.):
+    """Drop cancelled/timed-out requests so service restarts cannot stall polling.
+
+    rclpy.Future.done() is false for a cancelled future.
+    """
+    if future is None:return None
+    if future.cancelled():return None
+    if not future.done() and now-requested>timeout:
+        future.cancel()
+        return None
+    return future
+
+
 def monitor(controller, stop):
     node = Node("welding_web_monitor")
     profile = controller.profile
@@ -76,6 +89,7 @@ def monitor(controller, stop):
                     with controller.lock:
                         controller.object_edges = geometries
                         controller.telemetry["objects"] = objects
+                        controller.telemetry['error'] = None
                     last_scene = now
                 except Exception as error:
                     with controller.lock:
@@ -91,9 +105,8 @@ def monitor(controller, stop):
                 except Exception:
                     pass
                 controller_future = None
-            for future, requested in ((scene_future, scene_requested), (controller_future, controller_requested)):
-                if future is not None and now-requested > 3:
-                    future.cancel()
+            scene_future=pending_request(scene_future,scene_requested,now)
+            controller_future=pending_request(controller_future,controller_requested,now)
             if now-last_request >= .8:
                 if scene_future is None and scene.service_is_ready():
                     scene_future = scene.call_async(GetPlanningScene.Request())

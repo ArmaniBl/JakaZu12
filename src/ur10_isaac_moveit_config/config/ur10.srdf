@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <robot name="ur10">
-  <group name="ur_manipulator"><chain base_link="base_link" tip_link="tool0"/></group>
+  <group name="ur_manipulator"><chain base_link="base_link" tip_link="welding_tcp"/></group>
+  <disable_collisions link1="wrist_3_link" link2="welding_torch_link" reason="Adjacent"/>
   <group_state name="home" group="ur_manipulator">
     <joint name="shoulder_pan_joint" value="0"/>
     <joint name="shoulder_lift_joint" value="-1.57079632679"/>

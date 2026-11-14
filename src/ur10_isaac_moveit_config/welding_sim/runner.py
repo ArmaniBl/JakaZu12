@@ -27,6 +27,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from .geometry import quaternion, rotation
 from .return_pose import load_return_pose
 from .profiles import ISAAC, load_profile
+from .orientation import tilted_orientation, candidates
 from .geometry import box_geometry, cylinder_geometry, mesh_geometry
 
 
@@ -122,10 +123,17 @@ class WeldingRunner(Node):
         deadline = time.monotonic() + 20
         while True:
             scene = self.call(GetPlanningScene, "/get_planning_scene", GetPlanningScene.Request()).scene
+            floor=next((o for o in scene.world.collision_objects if o.id=='floor'),None)
+            if not self.profile.real and self.args.mode!='preview' and floor is None:
+                if time.monotonic()>=deadline:
+                    raise RuntimeError('Simulation collision floor is absent. Restart run_sim.sh or run add_floor.py before planning')
+                rclpy.spin_once(self,timeout_sec=.2)
+                continue
             for obj in scene.world.collision_objects:
                 if obj.id == self.args.object:
                     self.workpiece = deepcopy(obj)
                     self.initial_scene = scene
+                    self.planning_floor=deepcopy(floor)
                     self.geometry = object_geometry(obj, self.profile.frame)
                     return self.geometry.edges
             if time.monotonic() >= deadline:
@@ -264,7 +272,10 @@ class WeldingRunner(Node):
         ik.ik_request.pose_stamped.header.frame_id = profile_of(self).frame
         ik.ik_request.pose_stamped.pose = pose_message(position, orientation)
         ik.ik_request.avoid_collisions = True
-        ik.ik_request.timeout.sec = 2
+        if getattr(self,'orientation_deadline',None) is not None:
+            ik.ik_request.timeout.nanosec = 250_000_000
+        else:
+            ik.ik_request.timeout.sec = 2
         solution = self.call(GetPositionIK, "/compute_ik", ik)
         if solution.error_code.val != 1:
             raise RuntimeError(f"Approach IK failed ({solution.error_code.val}); change edge, offset or --roll")
@@ -366,6 +377,41 @@ class WeldingRunner(Node):
         return result
 
     def plan(self, paths):
+        automatic=getattr(self.args,'orientation_mode','fixed')=='auto'
+        tilt=getattr(self.args,'tilt',0.)
+        direction=getattr(self.args,'tilt_direction',0.)
+        options=candidates(tilt,direction,self.args.max_tilt) if automatic else [(tilt,direction,0.)]
+        self.orientation_deadline=time.monotonic()+getattr(self.args,'orientation_timeout',120.) if automatic else None
+        attempts=[]
+        try:
+            for inclination,heading,roll in options:
+                if self.orientation_deadline is not None and time.monotonic()>=self.orientation_deadline:break
+                candidate=[(edge,seam,points,tilted_orientation(q,inclination,heading,roll))
+                           for edge,seam,points,q in paths]
+                self.cartesian_targets={};self.joint_targets={}
+                entry={'tilt_deg':inclination,'direction_deg':heading,'roll_delta_deg':roll}
+                if automatic:self.get_logger().info(f'Orientation search: tilt={inclination:g}, direction={heading:g}, roll_delta={roll:g}')
+                try:
+                    result=WeldingRunner.plan_fixed(self,candidate)
+                    entry['status']='planned';attempts.append(entry)
+                    self.report['orientation_attempts']=attempts
+                    self.report['chosen_orientation']=entry.copy()
+                    self.planned_paths=candidate
+                    for i,(_,_,_,q) in enumerate(candidate):
+                        if i<len(self.report.get('selection',[])):
+                            self.report['selection'][i]['orientation_xyzw']=q.tolist()
+                    return result
+                except RuntimeError as error:
+                    entry.update(status='failed',error=str(error));attempts.append(entry)
+                    self.report['orientation_attempts']=attempts
+                    if not automatic:raise
+            self.report['orientation_attempts']=attempts
+            raise RuntimeError(f'No complete collision-free route in {len(attempts)} orientation attempts. '
+                               'Inspect orientation_attempts; change tilt limit, workpiece placement or selected seam.')
+        finally:
+            self.orientation_deadline=None
+
+    def plan_fixed(self, paths):
         start = self.fresh_state()
         if self.return_pose is None:
             positions = dict(zip(start.joint_state.name, start.joint_state.position))
@@ -389,7 +435,10 @@ class WeldingRunner(Node):
                     seed.joint_state = JointState(name=list(values), position=list(values.values()))
                     seeds.append(seed)
             last_error = None
+            if getattr(self,'orientation_deadline',None) is not None:seeds=seeds[:2]
             for attempt, seed in enumerate(seeds, 1):
+                if getattr(self,'orientation_deadline',None) is not None and time.monotonic()>=self.orientation_deadline:
+                    raise RuntimeError('Orientation search time budget exhausted')
                 try:
                     approach = self.approach(state, pre, orientation, seed)
                     approached = self.end_state(state, approach)
@@ -455,6 +504,10 @@ class WeldingRunner(Node):
             current = next((o for o in scene.world.collision_objects if o.id == self.args.object), None)
             if current != self.workpiece:
                 raise RuntimeError("Workpiece changed since planning; replan before execution")
+            if getattr(self,'planning_floor',None) is not None:
+                floor=next((o for o in scene.world.collision_objects if o.id=='floor'),None)
+                if floor!=self.planning_floor:
+                    raise RuntimeError('Collision floor changed or was removed since planning; replan before execution')
             trajectory = self.prepare_execution(name, trajectory)
             self.get_logger().info(f"Executing {name}")
             future = action.send_goal_async(ExecuteTrajectory.Goal(trajectory=trajectory))
@@ -519,12 +572,20 @@ def arguments():
     parser.add_argument("--clearance", type=float, default=0.05, help="Additional approach/retract clearance, m")
     parser.add_argument("--step", type=float, default=0.005, help="Cartesian interpolation step, m")
     parser.add_argument("--roll", type=float, default=0.0, help="Tool rotation about its Z axis, degrees")
+    parser.add_argument('--orientation-mode', choices=['auto','fixed'], default='auto')
+    parser.add_argument('--tilt',type=float,default=0.,help='TCP inclination from the surface normal, degrees')
+    parser.add_argument('--tilt-direction',type=float,default=0.,help='Inclination direction in the nominal tool XY plane, degrees')
+    parser.add_argument('--max-tilt',type=float,default=45.,help='Maximum inclination during automatic search, degrees')
+    parser.add_argument('--orientation-timeout',type=float,default=120.,help='Approximate automatic planning budget, seconds')
     parser.add_argument("--speed", type=float, default=0.02, help="Maximum pass speed, m/s")
     parser.add_argument("--scaling", type=float, default=0.05, help="Joint velocity/acceleration factor")
     parser.add_argument("--mode", choices=["preview", "plan", "execute"], default="preview")
     parser.add_argument("--once", action="store_true", help="Exit after publishing preview")
     parser.add_argument("--output", default="diagnostics/welding", help="Directory for JSON reports")
     args = parser.parse_args()
+    if (not all(math.isfinite(v) for v in (args.tilt,args.tilt_direction,args.max_tilt,args.orientation_timeout))
+            or not 0<=args.tilt<=args.max_tilt<=60 or not 5<=args.orientation_timeout<=300):
+        parser.error('Require 0<=tilt<=max-tilt<=60 degrees and orientation-timeout in 5..300 seconds')
     finite = [args.begin, args.end, args.offset, args.clearance, args.step, args.roll, args.speed, args.scaling]
     if (not all(math.isfinite(v) for v in finite) or not 0 <= args.begin < args.end <= 1
             or not 0 < args.offset <= 0.5 or not 0 < args.clearance <= 0.5
@@ -565,10 +626,13 @@ def main():
             seams = [geometry.contour(face)]
         paths = [(edge, *edge.path(args.begin, args.end, args.offset, args.step, math.radians(args.roll)))
                  for edge in seams]
+        if args.mode=='preview':
+            paths=[(edge,seam,points,tilted_orientation(q,args.tilt,args.tilt_direction)) for edge,seam,points,q in paths]
         node.report["selection"] = [{"edge": edge.id, "begin": args.begin, "end": args.end,
                                      "seam": seam.tolist(), "tool_path": points.tolist(),
                                      "orientation_xyzw": q.tolist()} for edge, seam, points, q in paths]
-        node.report["settings"] = {k: getattr(args, k) for k in ("offset", "clearance", "step", "speed", "scaling", "roll")}
+        node.report["settings"] = {k: getattr(args, k) for k in ("offset", "clearance", "step", "speed", "scaling", "roll",
+            'orientation_mode','tilt','tilt_direction','max_tilt','orientation_timeout')}
         node.publish_markers(edges, selected, paths)
         if args.mode == "preview":
             node.report["status"] = "preview"

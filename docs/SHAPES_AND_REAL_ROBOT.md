@@ -73,7 +73,7 @@ Mesh JSON содержит массивы `vertices: [[x,y,z],…]` в метр�
 | Параметр | `isaac_ur10` (по умолчанию) | `jaka_real` |
 | --- | --- | --- |
 | Группа MoveIt | `ur_manipulator` | `jaka_zu12` |
-| Конечное звено | `tool0` | `Link_6` |
+| Конечное звено | `welding_tcp` | `welding_tcp` |
 | Суставы | `shoulder_pan_joint` … `wrist_3_joint` | `joint_1` … `joint_6` |
 | Обратная связь | `/ur10/joint_states` | `/joint_states` |
 | Action драйвера | `/ur10_controller/follow_joint_trajectory` | `/jaka_zu12_controller/follow_joint_trajectory` |
@@ -111,7 +111,7 @@ Mesh JSON содержит массивы `vertices: [[x,y,z],…]` в метр�
 launch-параметры передаются после IP и частоты фильтра:
 `./run_real.sh <IP> 0.5 payload_mass_kg:=0.4`.
 
-`Link_6` — фланец, а не калиброванный TCP горелки. Для инструмента добавьте его
+Насадка включена в обе модели по умолчанию. `Link_6` — фланец JAKA; `welding_tcp` — TCP из CAD насадки. Физическая калибровка TCP не выполнялась. Для инструмента добавьте его
 фиксированное звено и collision-геометрию в URDF, настройте массу/центр масс в
 драйвере и укажите соответствующий `tip`. Исходный launch задаёт центр масс
 инструмента нулевым; при ненулевом центре его нужно изменить.

@@ -1,6 +1,6 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
-const defaults = {object:'welding_workpiece',selection:'face',face:'z_plus',edge:'x_plus__z_plus',begin:0,end:1,offset:.03,clearance:.05,step:.005,speed:.02,scaling:.05,roll:0};
+const defaults = {object:'welding_workpiece',selection:'face',face:'z_plus',edge:'x_plus__z_plus',begin:0,end:1,offset:.03,clearance:.05,step:.005,speed:.02,scaling:.05,roll:0,orientation_mode:'auto',tilt:0,tilt_direction:0,max_tilt:45,orientation_timeout:120};
 const faceNames = {z_plus:'Верхняя грань · Z+',z_minus:'Нижняя грань · Z−',x_plus:'Ближняя грань · X+',x_minus:'Дальняя грань · X−',y_plus:'Боковая грань · Y+',y_minus:'Боковая грань · Y−'};
 const axisName = (s) => s.replace('_plus','+').replace('_minus','−').toUpperCase();
 const faceLabel = (id) => faceNames[id] || `Грань ${id}`;
@@ -24,9 +24,10 @@ function readSettings(){
     begin:Number($('begin-number').value)/100,end:Number($('end-number').value)/100,
     speed:Number($('speed').value)/1000,offset:Number($('offset').value)/1000,
     clearance:Number($('clearance').value)/1000,step:Number($('step').value)/1000,
-    scaling:Number($('scaling').value)/100,roll:Number($('roll').value)};
+    scaling:Number($('scaling').value)/100,roll:Number($('roll').value),orientation_mode:$('orientation-mode').value,
+    tilt:Number($('tilt').value),tilt_direction:Number($('tilt-direction').value),max_tilt:Number($('max-tilt').value),orientation_timeout:Number($('orientation-timeout').value)};
 }
-function validSettings(){const s=readSettings();return $('settings-form').checkValidity()&&s.begin<s.end&&s.begin>=0&&s.end<=1;}
+function validSettings(){const s=readSettings();return $('settings-form').checkValidity()&&s.begin<s.end&&s.begin>=0&&s.end<=1&&s.tilt<=s.max_tilt;}
 function applySettings(settings){
   const s={...defaults,...settings};selection=s.selection==='edge'?'edge':'face';
   for(const key of ['face','edge']){
@@ -36,10 +37,13 @@ function applySettings(settings){
   for(const key of ['begin','end']){$(key).value=s[key]*100;$(key+'-number').value=s[key]*100;}
   for(const key of ['speed','offset','clearance','step'])$(key).value=Math.round(s[key]*1000*100)/100;
   $('scaling').value=s.scaling*100;$('roll').value=s.roll;
+  $('orientation-mode').value=s.orientation_mode;
+  for(const key of ['tilt','tilt_direction','max_tilt','orientation_timeout'])$(key.replaceAll('_','-')).value=s[key];
   if([...$('object').options].some(o=>o.value===s.object))$('object').value=s.object;
   changed();
 }
 function changed(){
+  $('orientation-hint').textContent=$('orientation-mode').value==='auto'?'Проверяем наклоны и повороты в пределах заданного угла. Только полный маршрут с возвратом разрешает движение.':'Используются заданные наклон, направление и поворот. Конец горелки остаётся на заданном пути.';
   $('mode-face').classList.toggle('selected',selection==='face');$('mode-edge').classList.toggle('selected',selection==='edge');
   $('face').hidden=selection!=='face';$('edge').hidden=selection!=='edge';
   const s=readSettings();$('scaling-value').textContent=`${$('scaling').value}%`;
@@ -214,6 +218,9 @@ function updateControls(){
 }
 function renderJob(){
   const job=state?.job,active=isRunning();
+  const chosen=job?.chosen_orientation;
+  $('orientation-result').hidden=!chosen;
+  if(chosen)$('orientation-result').textContent=`Выбрано: наклон ${chosen.tilt_deg}° · направление ${chosen.direction_deg}° · доп. поворот ${chosen.roll_delta_deg}°`;
   $('operation-type').textContent=job?{preview:'ПРЕДПРОСМОТР',plan:'ПЛАНИРОВАНИЕ',execute:'ВЫПОЛНЕНИЕ'}[job.mode]:'ОЖИДАНИЕ';
   $('operation-phase').textContent=job?job.phase:'Всё начинается с выбора участка';
   $('operation-light').classList.toggle('active',active);$('activity-track').classList.toggle('running',active);$('activity-track').classList.toggle('done',job?.state==='succeeded');
@@ -274,7 +281,7 @@ $('workpiece-apply').onclick=applyWorkpiece;
 
 for(const a of ['minus','plus'])for(const b of ['minus','plus'])for(const pair of [['x','y'],['x','z'],['y','z']]){const id=`${pair[0]}_${a}__${pair[1]}_${b}`,option=document.createElement('option');option.value=id;option.textContent=`Ребро ${axisName(pair[0]+'_'+a)} / ${axisName(pair[1]+'_'+b)}`;$('edge').append(option);}
 $('settings-form').addEventListener('submit',e=>e.preventDefault());
-for(const id of ['speed','offset','clearance','step','scaling','roll','face','edge','object'])$(id).addEventListener('input',changed);
+for(const id of ['speed','offset','clearance','step','scaling','roll','face','edge','object','orientation-mode','tilt','tilt-direction','max-tilt','orientation-timeout'])$(id).addEventListener('input',changed);
 for(const key of ['begin','end']){for(const suffix of ['','-number'])$(key+suffix).addEventListener('input',()=>{$(key+(suffix?'':'-number')).value=$(key+suffix).value;changed();});}
 $('mode-face').onclick=()=>{selection='face';changed();};$('mode-edge').onclick=()=>{selection='edge';changed();};
 $('full-range').onclick=()=>{for(const id of ['begin','begin-number'])$(id).value=0;for(const id of ['end','end-number'])$(id).value=100;changed();};

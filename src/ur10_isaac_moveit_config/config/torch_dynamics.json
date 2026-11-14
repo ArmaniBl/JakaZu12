@@ -1,0 +1,717 @@
+{
+  "estimated": true,
+  "method": "sum of CAD mesh volume integrals with assumed material densities",
+  "tool_mass_kg": 1.2735342867923563,
+  "tool_center_m": [
+    -0.01519793232651902,
+    -0.002151103314400024,
+    0.1507232702360932
+  ],
+  "tool_inertia_kg_m2": [
+    [
+      0.021720790151532336,
+      -1.2547973071127222e-06,
+      0.0002576412487622979
+    ],
+    [
+      -1.2547973071127222e-06,
+      0.004782973230613556,
+      0.0007381037140399556
+    ],
+    [
+      0.0002576412487622979,
+      0.0007381037140399556,
+      0.017923795358867598
+    ]
+  ],
+  "combined_wrist_mass_kg": 1.4755342938257043,
+  "combined_wrist_center_m": [
+    -0.013117341960239245,
+    -0.001856618200460957,
+    0.12800160131586716
+  ],
+  "gains": [
+    {
+      "joint": "shoulder_pan_joint",
+      "effective_inertia_estimate": 13.249693305890652,
+      "stiffness": 153634.484375,
+      "damping": 2853.4959605209883
+    },
+    {
+      "joint": "shoulder_lift_joint",
+      "effective_inertia_estimate": 12.067872762850506,
+      "stiffness": 169797.328125,
+      "damping": 2862.9303528269616
+    },
+    {
+      "joint": "elbow_joint",
+      "effective_inertia_estimate": 2.1917490875679877,
+      "stiffness": 831589.25,
+      "damping": 2700.09998327384
+    },
+    {
+      "joint": "wrist_1_joint",
+      "effective_inertia_estimate": 0.0746437849964081,
+      "stiffness": 165646.515625,
+      "damping": 222.39139279852225
+    },
+    {
+      "joint": "wrist_2_joint",
+      "effective_inertia_estimate": 0.08705710652939562,
+      "stiffness": 157650.1875,
+      "damping": 234.30381275230408
+    },
+    {
+      "joint": "wrist_3_joint",
+      "effective_inertia_estimate": 0.018428370054692483,
+      "stiffness": 155870.890625,
+      "damping": 107.19041847463788
+    }
+  ],
+  "parts": [
+    {
+      "prim": "/TorchTool/BaseMount/Printed/P01",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.08487458153535386
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Printed/P02",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.007725984589608189
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/PIVOT_B/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.025691910493478104
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/PIVOT_N/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.00644859201319962
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/PIVOT_W0/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0011400451963232928
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/PIVOT_W1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0011400451963232924
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/PIVOT_W2/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0011400451963232932
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/ROBOT_B45/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0063350309097791255
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/ROBOT_B45/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104870164456542e-07
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/ROBOT_B135/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.006335031526965301
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/ROBOT_B135/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104876276916558e-07
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/ROBOT_B225/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.006335031526965299
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/ROBOT_B225/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104876276916888e-07
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/ROBOT_B315/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.006335030909779126
+    },
+    {
+      "prim": "/TorchTool/BaseMount/Hardware/ROBOT_B315/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104870164456365e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Hose/ShortHose",
+      "material": "HoseRubber",
+      "density": 1100,
+      "mass_kg": 0.08704567753049935
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P03",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.05131640384581792
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P04",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.02848189172247492
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P05",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.045648451388102
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P06",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.019716820263957175
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P07",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.021047357742580333
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P08",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.016960734466798324
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P09",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.010963079809980654
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P10",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.019955759343215813
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P11",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.014984543776293123
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P12",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.0010493695530279235
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P13",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.004039081632990379
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P09_left",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.01096307980998066
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P13_front_left",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.004039081632990293
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P13_rear_right",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.004039081632990138
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Printed/P13_rear_left",
+      "material": "PrintedBlack",
+      "density": 1250,
+      "mass_kg": 0.004039081632990143
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/N06_neg38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0025159435423301305
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/N07_neg38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0025159435423305213
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/N08_neg38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.002515938868006404
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/N10_neg38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0025159347987965593
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/N06_38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0025159435423306115
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/N07_38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.002515943542330474
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/N08_38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.002515938868006417
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/N10_38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.002515934798796032
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/N06_C/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.002515941244055784
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/TIE_Bneg26/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.02574166376347125
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/TIE_Bneg26/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104698238315054e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/TIE_WFneg26/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334687148698741
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/TIE_WRneg26/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334687148705253
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/TIE_Nneg26/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.002903008739109782
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/TIE_B26/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.025741663763472103
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/TIE_B26/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104698238215183e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/TIE_WF26/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.000633468714870877
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/TIE_WR26/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334687148702989
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/TIE_N26/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0029030087391096176
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount06_Bneg38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.00920191925707579
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount06_Bneg38/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104692126218988e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount06_Wneg38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334687947794431
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount06_B38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.009201919257076713
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount06_B38/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104692125930407e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount06_W38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334687947773063
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount07_Bneg38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.009201919257075268
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount07_Bneg38/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104692126058622e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount07_Wneg38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334687947779291
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount07_B38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.00920191925707586
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount07_B38/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.10469212601247e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount07_W38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334687947769165
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount08_Bneg38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.009201923881729784
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount08_Bneg38/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104678010355798e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount08_Wneg38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334691412665972
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount08_B38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.009201923881730193
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount08_B38/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104678010134013e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/mount08_W38/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334691412655711
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/FRONT_Bneg1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.009201931753880805
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/FRONT_Bneg1/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104681065875977e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/FRONT_Wneg1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334665901180214
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/FRONT_Sneg1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.001088895963380198
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/FRONT_B1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.00920193175387872
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/FRONT_B1/Drive_0",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.104681066171837e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/FRONT_W1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334665901192374
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/FRONT_S1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0010888959633818338
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/REAR_ROD/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.02877164519977493
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/REAR_Nneg1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0029030068208900353
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/REAR_Wneg1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0006334668015187494
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/REAR_Sneg1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.001088895341313778
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/REAR_N1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0029030068208902244
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/REAR_W1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.000633466801518932
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/REAR_S1/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0010888953413136487
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Clamp/Hardware/CLOSURE/Body",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.015951124085097274
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/HandleShell",
+      "material": "ShellBlack",
+      "density": 1100,
+      "mass_kg": 0.2843312393724864
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/TexturedSideGrips",
+      "material": "GripRubber",
+      "density": 1100,
+      "mass_kg": 0.0004447867850649067
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/RedTrigger",
+      "material": "TriggerRed",
+      "density": 1100,
+      "mass_kg": 0.00742280157248067
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/ShellScrew_neg100_neg1",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.00020073134565662043
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/ShellDrive_neg100_neg1",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.30706992660471e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/ShellScrew_neg100_1",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0002007313456560953
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/ShellDrive_neg100_1",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.307069926841161e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/ShellScrew_101_neg1",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.00020073126340807465
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/ShellDrive_101_neg1",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.307082025322562e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/ShellScrew_101_1",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.00020073126340824031
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/ShellDrive_101_1",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 7.307082025076505e-07
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/BlackBentNeck",
+      "material": "NeckBlack",
+      "density": 1200,
+      "mass_kg": 0.021126798745778424
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/NozzleRearCollar",
+      "material": "Chrome",
+      "density": 7850,
+      "mass_kg": 0.029509342094367674
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/NozzleRing_0",
+      "material": "Chrome",
+      "density": 7850,
+      "mass_kg": 0.004464428955322106
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/NozzleRing_4",
+      "material": "Chrome",
+      "density": 7850,
+      "mass_kg": 0.0044644214557788
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/NozzleRing_8",
+      "material": "Chrome",
+      "density": 7850,
+      "mass_kg": 0.004464422921229602
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/GasNozzle",
+      "material": "Chrome",
+      "density": 7850,
+      "mass_kg": 0.10609199910900563
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/NozzleCavity",
+      "material": "DriveDark",
+      "density": 1250,
+      "mass_kg": 0.00022367603704133258
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/CopperContactTip",
+      "material": "Copper",
+      "density": 8960,
+      "mass_kg": 0.0024251080052815413
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/HangingHook",
+      "material": "Steel",
+      "density": 7850,
+      "mass_kg": 0.0018410182572000946
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/RearBoot",
+      "material": "NeckBlack",
+      "density": 1200,
+      "mass_kg": 0.012000161325155592
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/SpringInnerSleeve",
+      "material": "HoseRubber",
+      "density": 1100,
+      "mass_kg": 0.03687103339842068
+    },
+    {
+      "prim": "/TorchTool/LowerPivot/Torch/HelicalStrainRelief",
+      "material": "SpringSteel",
+      "density": 7850,
+      "mass_kg": 0.041945312500723045
+    }
+  ],
+  "backup": "/mnt/c/Users/user/Desktop/ur10/ur_welding_torch.usda.bak_dynamics_20261113_213608",
+  "dynamic_validation": "not yet performed"
+}

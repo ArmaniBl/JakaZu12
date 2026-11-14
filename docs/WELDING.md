@@ -1,5 +1,9 @@
 # Имитация сварки по контуру грани
 
+Автоподбор наклона и поворота теперь включён по умолчанию. Ручной режим:
+`--orientation-mode fixed --tilt 30 --tilt-direction 270 --roll -90`.
+Алгоритм, ограничения и проверенные настройки: [TOOL_ORIENTATION.md](TOOL_ORIENTATION.md).
+
 Поддержка BOX, цилиндров, mesh и профиля физического JAKA описана в
 [SHAPES_AND_REAL_ROBOT.md](SHAPES_AND_REAL_ROBOT.md). Ниже — исходный сценарий BOX/Isaac UR10.
 

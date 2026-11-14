@@ -1,5 +1,9 @@
 # JakaZu12
 
+Горелка на UR10 в Isaac и MoveIt: [инструкция](docs/TORCH.md).
+Насадка включена по умолчанию в MoveIt для `./run_sim.sh` и `./run_real.sh`.
+Используются обычные `./weld.sh` и `./run_web.sh`, TCP — `welding_tcp`.
+
 Physical JAKA on Ubuntu 22.04 / ROS 2 Humble is also supported by the
 build and environment scripts. ROS_DISTRO can select the installed distribution.
 

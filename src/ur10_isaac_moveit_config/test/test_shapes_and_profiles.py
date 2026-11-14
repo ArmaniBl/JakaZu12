@@ -110,7 +110,7 @@ class ShapesTests(unittest.TestCase):
 class ProfileTests(unittest.TestCase):
     def test_names_and_strict_feedback(self):
         self.assertEqual(JAKA.group, 'jaka_zu12')
-        self.assertEqual(JAKA.tip, 'Link_6')
+        self.assertEqual(JAKA.tip, 'welding_tcp')
         self.assertTrue(JAKA.accepts(JointState(name=list(JAKA.joints), position=[0.]*6)))
         self.assertFalse(JAKA.accepts(JointState(name=list(ISAAC.joints), position=[0.]*6)))
         self.assertFalse(JAKA.accepts(JointState(name=list(JAKA.joints)+['joint_1'], position=[0.]*7)))
@@ -134,7 +134,7 @@ class ProfileTests(unittest.TestCase):
                                call=Mock(return_value=response), report={}, limit_cartesian_speed=Mock())
         WeldingRunner.cartesian(stub, RobotState(), [])
         request = stub.call.call_args.args[2]
-        self.assertEqual((request.group_name,request.link_name), ('jaka_zu12','Link_6'))
+        self.assertEqual((request.group_name,request.link_name), ('jaka_zu12','welding_tcp'))
         trajectory = RobotTrajectory(); trajectory.joint_trajectory.joint_names=list(JAKA.joints)
         trajectory.joint_trajectory.points=[JointTrajectoryPoint(positions=[0.]*6)]
         fk = GetPositionFK.Response(); fk.error_code.val = 1
@@ -143,7 +143,7 @@ class ProfileTests(unittest.TestCase):
         stub.call = Mock(return_value=fk)
         state=RobotState(joint_state=JointState(name=list(JAKA.joints),position=[0.]*6))
         WeldingRunner.limit_cartesian_speed(stub,state,trajectory)
-        self.assertEqual(stub.call.call_args.args[2].fk_link_names, ['Link_6'])
+        self.assertEqual(stub.call.call_args.args[2].fk_link_names, ['welding_tcp'])
 
     def test_joint_goals_never_drop_unknown_names(self):
         result = GetMotionPlan.Response(); result.motion_plan_response.error_code.val=1

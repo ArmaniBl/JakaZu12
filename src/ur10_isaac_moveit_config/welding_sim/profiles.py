@@ -13,7 +13,7 @@ class RobotProfile:
     real: bool = False
     model: str = 'ur10'
     group: str = 'ur_manipulator'
-    tip: str = 'tool0'
+    tip: str = 'welding_tcp'
     frame: str = 'world'
     joint_states: str = '/ur10/joint_states'
     source_topic: str = '/joint_states'
@@ -21,7 +21,7 @@ class RobotProfile:
     trajectory_action: str = '/ur10_controller/follow_joint_trajectory'
     joints: tuple = UR_JOINTS
     frames: tuple = ('base_link', 'shoulder_link', 'upper_arm_link', 'forearm_link',
-                     'wrist_1_link', 'wrist_2_link', 'wrist_3_link', 'tool0')
+                     'wrist_1_link', 'wrist_2_link', 'wrist_3_link', 'tool0', 'welding_torch_link', 'welding_tcp')
 
     def accepts(self, message):
         return (len(message.name) == len(set(message.name)) == len(message.position)
@@ -36,10 +36,10 @@ class RobotProfile:
 
 ISAAC = RobotProfile()
 JAKA = RobotProfile(name='jaka_real', real=True, model='jaka_zu12', group='jaka_zu12',
-                   tip='Link_6', joint_states='/joint_states', publisher='moveit_server',
+                   tip='welding_tcp', joint_states='/joint_states', publisher='moveit_server',
                    trajectory_action='/jaka_zu12_controller/follow_joint_trajectory',
                    joints=tuple(f'joint_{i}' for i in range(1, 7)),
-                   frames=tuple(f'Link_{i}' for i in range(7)))
+                   frames=tuple(f'Link_{i}' for i in range(7))+('welding_torch_link','welding_tcp'))
 
 
 def load_profile(name='isaac_ur10', path=None):
