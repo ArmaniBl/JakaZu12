@@ -151,3 +151,15 @@ launch-параметры передаются после IP и частоты �
 из MoveIt: цилиндр, призма и BOX заменяют один и тот же ID без дубликатов.
 Браузерная проверка подтвердила автоматическую замену при выборе формы и обновление
 списка граней на мобильном экране. Артефакты: `diagnostics/web_workpiece_validation/`.
+
+## Physical JAKA completion
+
+For `jaka_real`, successful welding now finishes with a straight 0.25 m lift
+along world +Z from the last welding TCP position, retaining its orientation
+and X/Y position during the lift. No final orientation change is requested.
+The final normal retract and saved-pose return are replaced by this lift.
+Intermediate seam retracts are unchanged. The complete lift is
+planned with collision checking before execution begins; an unreachable or
+blocked lift rejects the job. No lift is triggered after failure/cancellation.
+Isaac retains its saved-pose return behavior. A supplied return-pose file does
+not override the physical JAKA lift.

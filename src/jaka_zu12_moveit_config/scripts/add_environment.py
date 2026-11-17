@@ -21,6 +21,7 @@ class EnvironmentLoader(Node):
         collision_object = CollisionObject()
         collision_object.header.frame_id = "world"
         collision_object.id = object_id
+        collision_object.pose.orientation.w = 1.0
 
         box = SolidPrimitive()
         box.type = SolidPrimitive.BOX
@@ -63,9 +64,9 @@ class EnvironmentLoader(Node):
             scene.world.collision_objects.append(removal)
         # Collision obstacle only; the welding UI/CLI reserve the ID floor.
         # Rotated 90 degrees right around the base centre.
-        # Metres: X=[-0.31, 0.49], Y=[-1.065, 0.135]; top Z=0.
+        # Metres: X=[-0.49, 0.31], Y=[-1.065, 0.135]; top Z=0.
         scene.world.collision_objects.append(
-            self.make_box("floor", [0.80, 1.20, 0.10], 0.09, -0.465, z=-0.05)
+            self.make_box("floor", [0.80, 1.20, 0.10], -0.09, -0.465, z=-0.05)
         )
         # A 15 cm cube, rotated 90 degrees right around the base, resting on Z=0.
         scene.world.collision_objects.append(

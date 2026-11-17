@@ -419,11 +419,13 @@ class WeldingRunner(Node):
                                 'joint_positions': {j: positions[j] for j in profile_of(self).joints}}
         state = deepcopy(start)
         stages = []
-        for edge, seam, points, orientation in paths:
+        for path_index, (edge, seam, points, orientation) in enumerate(paths):
             self.get_logger().info(f"Planning {edge.id}")
             pre = points[0] + self.args.clearance * edge.outward
             waypoints = [pose_message(p, orientation) for p in points]
-            waypoints.append(pose_message(points[-1] + self.args.clearance * edge.outward, orientation))
+            final_lift = profile_of(self).real and path_index == len(paths)-1
+            if not final_lift:
+                waypoints.append(pose_message(points[-1] + self.args.clearance * edge.outward, orientation))
             # A reachable start pose can have several IK branches. Search for
             # one that supports the entire contour before moving the robot.
             seeds = [state]
@@ -455,12 +457,29 @@ class WeldingRunner(Node):
             self.cartesian_targets[stage_name] = waypoints
             stages.append((stage_name, weld))
             state = self.end_state(state, weld)
-        self.get_logger().info("Planning return to the saved joint configuration")
-        targets = dict(self.return_pose['joint_positions'])
-        finish = self.joint_motion(state, targets)
-        self.joint_targets["workpiece:return"] = targets
-        stages.append(("workpiece:return", finish))
-        self.report["return_pose"] = deepcopy(self.return_pose)
+        if profile_of(self).real:
+            # End above the last welding point, with unchanged TCP orientation.
+            # This stage must be reachable before any job motion is allowed.
+            self.get_logger().info("Planning vertical lift of 0.25 m after welding")
+            target = points[-1].copy()
+            target[2] += 0.25
+            lift_waypoints = [pose_message(target, orientation)]
+            try:
+                finish = self.cartesian(state, lift_waypoints)
+            except RuntimeError as error:
+                raise RuntimeError(f'Completion lift failed: {error}') from error
+            self.cartesian_targets["workpiece:lift"] = lift_waypoints
+            stages.append(("workpiece:lift", finish))
+            self.report["completion"] = {"mode": "vertical_lift", "height_m": 0.25,
+                                         "target_xyz": target.tolist(),
+                                         "orientation_xyzw": orientation.tolist()}
+        else:
+            self.get_logger().info("Planning return to the saved joint configuration")
+            targets = dict(self.return_pose['joint_positions'])
+            finish = self.joint_motion(state, targets)
+            self.joint_targets["workpiece:return"] = targets
+            stages.append(("workpiece:return", finish))
+            self.report["return_pose"] = deepcopy(self.return_pose)
         self.report["stages"] = [{"name": name, "points": len(t.joint_trajectory.points),
                                   "duration_sec": t.joint_trajectory.points[-1].time_from_start.sec
                                   + t.joint_trajectory.points[-1].time_from_start.nanosec/1e9}

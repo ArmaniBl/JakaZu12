@@ -284,8 +284,10 @@ class Controller:
                     current.wait(timeout=8)
                 except subprocess.TimeoutExpired:
                     raise ValueError('Предпросмотр ещё останавливается') from None
+            # Presets are 0.20 m high; keep their bottom on the table at Z=0.
+            center = ('0', '-0.6', '0.1') if self.profile.real else ('-1', '0', '0.1')
             argv = [sys.executable, str(self.executable.with_name('add_workpiece.py')),
-                    '--id', object_id, '--frame', self.profile.frame, '--center', '-1', '0', '0.1',
+                    '--id', object_id, '--frame', self.profile.frame, '--center', *center,
                     '--clear-markers']
             if shape == 'prism':
                 mesh = Path(get_package_share_directory('ur10_isaac_moveit_config'))/'config/triangular_prism.json'

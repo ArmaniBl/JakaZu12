@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 from welding_sim.web_control import Controller
+from welding_sim.profiles import JAKA
 
 
 class WebWorkpieceTests(unittest.TestCase):
@@ -29,6 +30,15 @@ class WebWorkpieceTests(unittest.TestCase):
                 self.assertEqual(result['shape'],shape)
                 self.assertNotIn('shell',run.call_args.kwargs)
                 if shape=='prism':self.assertTrue(Path(argv[argv.index('--mesh-json')+1]).is_file())
+
+    def test_real_presets_stand_at_cube_location(self):
+        self.controller.profile=JAKA
+        for shape in ('box','cylinder','prism'):
+            with patch('welding_sim.web_control.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='',stderr='')) as run:
+                self.controller.replace_workpiece({'shape':shape})
+                argv=run.call_args.args[0]
+                index=argv.index('--center')+1
+                self.assertEqual([float(v) for v in argv[index:index+3]],[0.,-.6,.1])
 
     def test_unknown_form_and_no_scene_are_rejected(self):
         with patch('welding_sim.web_control.subprocess.run') as run:

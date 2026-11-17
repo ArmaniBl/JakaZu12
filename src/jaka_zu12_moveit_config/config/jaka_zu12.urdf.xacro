@@ -7,7 +7,7 @@
     <!-- Import jaka_zu12 urdf file -->
     <xacro:include filename="$(find jaka_description)/urdf/jaka_zu12.urdf" />
     <xacro:include filename="$(find ur10_isaac_moveit_config)/config/welding_torch.xacro"/>
-    <xacro:welding_torch parent="Link_6"/>
+    <xacro:welding_torch parent="Link_6" mount_yaw="${5*pi/4}"/>
 
     <!-- Import control_xacro -->
     <xacro:include filename="jaka_zu12.ros2_control.xacro" />

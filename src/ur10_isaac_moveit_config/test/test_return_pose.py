@@ -15,6 +15,7 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 from welding_sim.geometry import box_edges
 from welding_sim.return_pose import JOINTS, load_return_pose
 from welding_sim.runner import WeldingRunner
+from welding_sim.profiles import JAKA
 
 TARGETS=dict(zip(JOINTS,[0.,-2.0944,-1.0472,-1.5708,1.5708,0.]))
 def state(values=TARGETS):return RobotState(joint_state=JointState(name=list(values),position=list(values.values())))
@@ -65,6 +66,28 @@ class ReturnPoseTests(unittest.TestCase):
     def test_unreachable_return_prevents_a_complete_plan(self):
         stub=self.stub(RuntimeError('return path blocked'))
         with self.assertRaisesRegex(RuntimeError,'return path blocked'):WeldingRunner.plan(stub,self.paths())
+        stub.display.publish.assert_not_called()
+
+    def test_real_job_ends_with_vertical_lift_without_return(self):
+        stub=self.stub(trajectory(.3));stub.profile=JAKA
+        paths=self.paths()
+        stages=WeldingRunner.plan(stub,paths)
+        self.assertEqual(stages[-1][0], 'workpiece:lift')
+        stub.joint_motion.assert_not_called()
+        last=paths[-1][2][-1];q=paths[-1][3]
+        target=stub.cartesian_targets['workpiece:lift'][0]
+        self.assertAlmostEqual(target.position.x,float(last[0]))
+        self.assertAlmostEqual(target.position.y,float(last[1]))
+        self.assertAlmostEqual(target.position.z,float(last[2])+.25)
+        for actual,expected in zip([target.orientation.x,target.orientation.y,target.orientation.z,target.orientation.w],q):
+            self.assertAlmostEqual(actual,float(expected))
+        self.assertEqual(len(stub.cartesian.call_args_list[0].args[1]),len(paths[0][2]))
+
+    def test_blocked_real_lift_prevents_execution_plan(self):
+        stub=self.stub(trajectory(.3));stub.profile=JAKA
+        stub.cartesian.side_effect=[trajectory(.2),RuntimeError('lift blocked')]
+        with self.assertRaisesRegex(RuntimeError,'lift blocked'):
+            WeldingRunner.plan(stub,self.paths())
         stub.display.publish.assert_not_called()
 
     def test_return_feedback_is_verified(self):
