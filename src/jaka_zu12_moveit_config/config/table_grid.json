@@ -1,0 +1,130 @@
+{
+  "source": "kVantron-Weld-Windows/adaptive_weld/workspace.py and /api/workspace/state",
+  "table": {
+    "width_mm": 1200.0,
+    "depth_mm": 800.0
+  },
+  "grid": {
+    "pitch_mm": 50.0,
+    "diameter_mm": 15.0,
+    "offset_x_mm": 25.0,
+    "offset_y_mm": 25.0,
+    "offsets_confirmed": false
+  },
+  "world_from_table": {
+    "translation_m": [
+      -0.44,
+      0.135,
+      0.0
+    ],
+    "yaw_deg": -90.0,
+    "measured": false
+  },
+  "placement_adjustment": {
+    "world_translation_m": [
+      0.05,
+      0.0,
+      0.0
+    ],
+    "reason": "Operator: real TCP at O8 corresponds to previous RViz O9; shift table by one row",
+    "scope": "manual translation correction, not full calibration"
+  },
+  "frame": "table_grid",
+  "scanner_region": {
+    "from": "O1",
+    "to": "T10",
+    "source": "operator",
+    "placement_calibrated": false,
+    "confirmed": false
+  },
+  "preview_orientation": {
+    "heading": "increasing_rows",
+    "nominal_down_deg": 30.0,
+    "level_reference_plane": true,
+    "calibrated": false
+  },
+  "description": "Origin at front-left tabletop edge; X along A..X, Y along 1..16, Z up. Nominal robot/table placement, not camera registration.",
+  "preview_translation_world_m": [
+    -0.13898913929117263,
+    0.0036391644965042547,
+    -0.011345482834569936
+  ],
+  "preview_translation_reference": {
+    "source": "operator: lower short edge at smaller numbered rows Q3-S3; nearby round rim T3",
+    "capture_id": "8f5a1f4c7df444bc97917a6f457fd8a4",
+    "lower_edge_target_addresses": [
+      "Q3",
+      "S3"
+    ],
+    "lower_edge_center_world_m": [
+      -0.3259721795450641,
+      -0.7385125090600122,
+      0.006
+    ],
+    "lower_edge_requested_center_world_m": [
+      -0.315,
+      -0.74,
+      0.006
+    ],
+    "lower_edge_endpoints_world_m": [
+      [
+        -0.3259721795450641,
+        -0.6785125090600121,
+        0.006
+      ],
+      [
+        -0.3259721795450641,
+        -0.7985125090600123,
+        0.006
+      ]
+    ],
+    "circle_target_address": "T3",
+    "circle_target_world_xy_m": [
+      -0.315,
+      -0.84
+    ],
+    "circle_center_world_m": [
+      -0.3040278204549359,
+      -0.8414874909399878,
+      0.04069448444808378
+    ],
+    "circle_error_mm": 11.072549537738285,
+    "method": "single rigid placement with edge parallel to letter direction; balanced measured reference residuals",
+    "metric_scale_unchanged": true,
+    "registered": false,
+    "backup_directory": "/home/arm/welding/JakaZu12/scans/calibration-backups/20261119-164027-Q3-S3-T3"
+  },
+  "preview_yaw_adjustment": {
+    "angle_deg": 180.0,
+    "pivot_world_m": [
+      -0.21701578593505874,
+      -0.7492110249305611,
+      0.0
+    ],
+    "pivot_address": "workpiece_center",
+    "source": "operator: rotate full cloud 180 degrees in table plane about current workpiece center",
+    "registered": false,
+    "backup_directory": "/home/arm/welding/JakaZu12/scans/calibration-backups/20261119-165344-yaw180"
+  },
+  "preview_metric_scale": {
+    "factor": 1.1178180784627967,
+    "source": "operator confirmed physical wave-butt rectangle dimensions 200 x 120 mm",
+    "capture_id": "bfede13a443443a890c78b9d6e3489e3",
+    "measured_dimensions_before_m": [
+      0.17984339693489126,
+      0.10578208244290914
+    ],
+    "expected_dimensions_m": [
+      0.2,
+      0.12
+    ],
+    "dimensions_after_m": [
+      0.20103220038598218,
+      0.11824512413212583
+    ],
+    "method": "one uniform least-squares unit conversion from measured full top boundary rectangle; no per-axis deformation",
+    "independently_verified": false,
+    "registered": false,
+    "backup_directory": "/home/arm/welding/JakaZu12/scans/calibration-backups/20261119-162658-large-metric-scale"
+  }
+}

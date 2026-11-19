@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 
 import rclpy
+import json
+from pathlib import Path
+from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import Pose
 from moveit_msgs.msg import CollisionObject, ObjectColor, PlanningScene, PlanningSceneComponents
 from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene
 from rclpy.node import Node
 from shape_msgs.msg import SolidPrimitive
+from welding_sim.workpiece_model import preview_object
+from welding_sim.table_limits import wall_specs
 
 
 class EnvironmentLoader(Node):
@@ -64,17 +69,20 @@ class EnvironmentLoader(Node):
             scene.world.collision_objects.append(removal)
         # Collision obstacle only; the welding UI/CLI reserve the ID floor.
         # Rotated 90 degrees right around the base centre.
-        # Metres: X=[-0.49, 0.31], Y=[-1.065, 0.135]; top Z=0.
+        # One-row operator correction: O8 now occupies the previous O9 position.
+        # Metres: X=[-0.44, 0.36], Y=[-1.065, 0.135]; top Z=0.
         scene.world.collision_objects.append(
-            self.make_box("floor", [0.80, 1.20, 0.10], -0.09, -0.465, z=-0.05)
+            self.make_box("floor", [0.80, 1.20, 0.10], -0.04, -0.465, z=-0.05)
         )
-        # A 15 cm cube, rotated 90 degrees right around the base, resting on Z=0.
-        scene.world.collision_objects.append(
-            self.make_box("welding_workpiece", [0.15, 0.15, 0.15], 0.0, -0.60)
-        )
+        model_path=Path(get_package_share_directory('jaka_zu12_moveit_config'))/'config/workpiece_model.json'
+        for name,dimensions,center in wall_specs():
+            scene.world.collision_objects.append(self.make_box(name,dimensions,*center[:2],z=center[2]))
+            color=ObjectColor(id=name);color.color.a=0.
+            scene.object_colors.append(color)
+        model=json.loads(model_path.read_text())
+        scene.world.collision_objects.append(preview_object(model))
 
-        # Explicit per-object colors persist in MoveIt's monitored scene.
-        # Match add_workpiece.py so replacements keep the workpiece color.
+        # Keep supporting surface and workpiece visually distinct.
         for object_id, rgb in (("floor", (0.45, 0.48, 0.52)),
                                ("welding_workpiece", (0.9, 0.5, 0.1))):
             color = ObjectColor(id=object_id)
@@ -98,7 +106,7 @@ class EnvironmentLoader(Node):
 
         if success:
             self.get_logger().info(
-                "Added 1.20 x 0.80 m collision floor (top Z=0) and a 0.15 m welding cube at (0, -0.60, 0.075)"
+                "Added collision table and startup CAD; placement is preliminary until scanner-to-robot validation"
             )
         else:
             self.get_logger().error("MoveIt rejected the environment planning scene")

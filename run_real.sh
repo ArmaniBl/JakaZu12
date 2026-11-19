@@ -24,4 +24,6 @@ exec python3 "$workspace_dir/log_run.py" real -- \
   ros2 launch jaka_zu12_moveit_config real_robot.launch.py \
   ip:="$robot_ip" \
   auto_enable:=false \
+  scan_preview:=true \
+  scan_preview_script:="$workspace_dir/run_scan_preview.sh" \
   servo_lpf_cutoff_hz:="$servo_lpf_cutoff_hz" "$@"

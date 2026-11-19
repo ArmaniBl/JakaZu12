@@ -10,6 +10,46 @@ Panels:
     Name: Views
 Visualization Manager:
   Displays:
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Table grid A1-X16
+      Enabled: true
+      Topic:
+        Value: /table/grid
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Scanner preview - UNCALIBRATED
+      Enabled: true
+      Topic:
+        Value: /scanner/preview_points
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 255; 160; 40
+      Size (m): 0.002
+      Style: Points
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: RangeVision scan
+      Enabled: true
+      Topic:
+        Value: /rangevision/points
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 80; 210; 240
+      Size (m): 0.002
+      Style: Points
+      Value: true
     - Class: rviz_default_plugins/Grid
       Name: Grid
       Value: true

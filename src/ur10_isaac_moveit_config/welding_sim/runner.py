@@ -7,6 +7,7 @@ import json
 import math
 from pathlib import Path
 import signal
+import subprocess
 import time
 
 import numpy as np
@@ -28,6 +29,7 @@ from .geometry import quaternion, rotation
 from .return_pose import load_return_pose
 from .profiles import ISAAC, load_profile
 from .orientation import tilted_orientation, candidates
+from .workpiece_model import PREVIEW_TYPE
 from .geometry import box_geometry, cylinder_geometry, mesh_geometry
 
 
@@ -48,7 +50,7 @@ def pose_transform(pose):
 
 
 def object_geometry(obj, frame='world'):
-    if obj.id == 'floor':
+    if obj.id == 'floor' or obj.id.startswith('workspace_'):
         raise ValueError('floor is a collision obstacle, not a welding workpiece')
     if obj.header.frame_id != frame:
         raise ValueError(f'Workpiece must be expressed in the {frame} frame')
@@ -61,8 +63,10 @@ def object_geometry(obj, frame='world'):
     center, q = transform[:3, 3], quaternion(transform[:3, :3])
     if obj.meshes:
         mesh = obj.meshes[0]
-        return mesh_geometry([[v.x, v.y, v.z] for v in mesh.vertices],
-                             [list(t.vertex_indices) for t in mesh.triangles], center, q)
+        geometry=mesh_geometry([[v.x, v.y, v.z] for v in mesh.vertices],
+                              [list(t.vertex_indices) for t in mesh.triangles], center, q)
+        from .workpiece_model import apply_model_seams
+        return apply_model_seams(obj,geometry,center,q)
     primitive = obj.primitives[0]
     builders = {SolidPrimitive.BOX: box_geometry, SolidPrimitive.CYLINDER: cylinder_geometry}
     if primitive.type not in builders:
@@ -131,6 +135,8 @@ class WeldingRunner(Node):
                 continue
             for obj in scene.world.collision_objects:
                 if obj.id == self.args.object:
+                    if self.args.mode=='execute' and obj.type.key==PREVIEW_TYPE and not getattr(self.args,'use_scene_workpiece',False):
+                        raise RuntimeError('CAD placement is a scanner preview, not a validated robot registration. Calibrate, detect and apply the verified scan before execution.')
                     self.workpiece = deepcopy(obj)
                     self.initial_scene = scene
                     self.planning_floor=deepcopy(floor)
@@ -377,6 +383,8 @@ class WeldingRunner(Node):
         return result
 
     def plan(self, paths):
+        if profile_of(self).real:
+            return self.plan_best(paths)
         automatic=getattr(self.args,'orientation_mode','fixed')=='auto'
         tilt=getattr(self.args,'tilt',0.)
         direction=getattr(self.args,'tilt_direction',0.)
@@ -411,8 +419,58 @@ class WeldingRunner(Node):
         finally:
             self.orientation_deadline=None
 
+    def plan_best(self,paths):
+        from types import SimpleNamespace
+        from .table_limits import require_walls
+        from .path_quality import trajectory_quality
+        require_walls(self.initial_scene)
+        automatic=self.args.orientation_mode=='auto'
+        options=candidates(self.args.tilt,self.args.tilt_direction,self.args.max_tilt) if automatic else [(self.args.tilt,self.args.tilt_direction,0.)]*4
+        start=self.settled_state()
+        self.optimization_start=deepcopy(start)
+        values=dict(zip(start.joint_state.name,start.joint_state.position))
+        original=deepcopy(self.report);publisher=self.display
+        self.display=SimpleNamespace(publish=lambda _:None)
+        self.orientation_deadline=time.monotonic()+self.args.orientation_timeout
+        attempts=[];best=None;successes=0
+        try:
+            for tilt,direction,roll in options:
+                if time.monotonic()>=self.orientation_deadline or successes>=12:break
+                self.report=deepcopy(original);self.cartesian_targets={};self.joint_targets={}
+                candidate=[(edge,seam,points,tilted_orientation(q,tilt,direction,roll)) for edge,seam,points,q in paths]
+                entry=dict(tilt_deg=tilt,direction_deg=direction,roll_delta_deg=roll)
+                try:
+                    stages=self.plan_fixed(candidate)
+                    quality=trajectory_quality(stages,values,self.profile.joints)
+                    successes+=1;entry.update(status='planned',quality=quality)
+                    if best is None or quality['cost']<best['quality']['cost']:
+                        best=dict(stages=stages,quality=quality,report=deepcopy(self.report),paths=candidate,
+                            cartesian=deepcopy(self.cartesian_targets),joint=deepcopy(self.joint_targets),orientation=entry.copy())
+                except (RuntimeError,ValueError) as error:entry.update(status='failed',error=str(error))
+                attempts.append(entry)
+                self.get_logger().info(f'Route comparison: {len(attempts)} attempts, {successes} complete candidates')
+        finally:
+            self.display=publisher;self.optimization_start=None;self.orientation_deadline=None
+        if best is None:
+            self.report=original;self.report['orientation_attempts']=attempts
+            raise RuntimeError('No complete collision-free route inside table limits')
+        actual=self.fresh_state();current=dict(zip(actual.joint_state.name,actual.joint_state.position))
+        if max(abs(current[j]-values[j]) for j in self.profile.joints)>.005:
+            raise RuntimeError('Robot moved during route comparison; plan again')
+        scene=self.call(GetPlanningScene,'/get_planning_scene',GetPlanningScene.Request()).scene
+        if (sorted(scene.world.collision_objects,key=lambda o:o.id)!=sorted(self.initial_scene.world.collision_objects,key=lambda o:o.id)
+                or scene.robot_state.attached_collision_objects!=self.initial_scene.robot_state.attached_collision_objects):
+            raise RuntimeError('Collision scene changed during route comparison; plan again')
+        self.report=best['report'];self.cartesian_targets=best['cartesian'];self.joint_targets=best['joint'];self.planned_paths=best['paths']
+        self.report.update(orientation_attempts=attempts,chosen_orientation=best['orientation'],optimization=dict(
+            quality=best['quality'],complete_candidates=successes,scope='best sampled complete route; no global optimality guarantee'))
+        for i,(_,_,_,q) in enumerate(best['paths']):
+            if i<len(self.report.get('selection',[])):self.report['selection'][i]['orientation_xyzw']=q.tolist()
+        publisher.publish(DisplayTrajectory(model_id=self.profile.model,trajectory_start=start,trajectory=[t for _,t in best['stages']]))
+        return best['stages']
+
     def plan_fixed(self, paths):
-        start = self.fresh_state()
+        start = deepcopy(self.optimization_start) if getattr(self,'optimization_start',None) is not None else self.fresh_state()
         if self.return_pose is None:
             positions = dict(zip(start.joint_state.name, start.joint_state.position))
             self.return_pose = {'units': 'rad', 'source': 'job_start',
@@ -519,6 +577,19 @@ class WeldingRunner(Node):
         if not action.wait_for_server(timeout_sec=10):
             raise RuntimeError("MoveIt execute action unavailable")
         for name, trajectory in stages:
+            if getattr(self.args, 'scan_report', None):
+                # Use the installed bridge and its separate numerical environment.
+                from ament_index_python.packages import get_package_prefix
+                bridge = Path(get_package_prefix('ur10_isaac_moveit_config'))/'lib/ur10_isaac_moveit_config/scan_job.py'
+                python = Path(self.args.scan_report).resolve()
+                workspace = next((p for p in python.parents if (p/'.venv-rangevision/bin/python').is_file()), None)
+                if workspace is None:
+                    raise RuntimeError('Scan processing environment unavailable')
+                check = subprocess.run([str(workspace/'.venv-rangevision/bin/python'), str(bridge), 'check',
+                    '--report', self.args.scan_report, '--calibration', self.args.scan_calibration,
+                    '--scanner-url', self.args.scanner_url], capture_output=True, text=True, timeout=30)
+                if check.returncode:
+                    raise RuntimeError('Scan approval invalid before execution: '+check.stderr[-1500:])
             scene = self.call(GetPlanningScene, "/get_planning_scene", GetPlanningScene.Request()).scene
             current = next((o for o in scene.world.collision_objects if o.id == self.args.object), None)
             if current != self.workpiece:
@@ -601,7 +672,15 @@ def arguments():
     parser.add_argument("--mode", choices=["preview", "plan", "execute"], default="preview")
     parser.add_argument("--once", action="store_true", help="Exit after publishing preview")
     parser.add_argument("--output", default="diagnostics/welding", help="Directory for JSON reports")
+    parser.add_argument('--scan-report')
+    parser.add_argument('--use-scene-workpiece',action='store_true',help='Use the current MoveIt/RViz workpiece directly, as reviewed by the operator')
+    parser.add_argument('--scan-calibration')
+    parser.add_argument('--scanner-url', default='http://127.0.0.1:8158')
     args = parser.parse_args()
+    if args.scan_report and not args.scan_calibration:
+        parser.error('--scan-report requires --scan-calibration')
+    if args.use_scene_workpiece and args.scan_report:
+        parser.error('Choose current scene geometry or scan receipt, not both')
     if (not all(math.isfinite(v) for v in (args.tilt,args.tilt_direction,args.max_tilt,args.orientation_timeout))
             or not 0<=args.tilt<=args.max_tilt<=60 or not 5<=args.orientation_timeout<=300):
         parser.error('Require 0<=tilt<=max-tilt<=60 degrees and orientation-timeout in 5..300 seconds')
@@ -614,7 +693,7 @@ def arguments():
     return args
 
 
-def main():
+def main(runner_type=None):
     args = arguments()
     # Keep the ROS context alive long enough to cancel an action on Ctrl+C.
     rclpy.init(args=[], signal_handler_options=SignalHandlerOptions.NO)
@@ -622,7 +701,8 @@ def main():
         raise KeyboardInterrupt
     signal.signal(signal.SIGINT, interrupt)
     signal.signal(signal.SIGTERM, interrupt)
-    node = WeldingRunner(args)
+    node = (runner_type or WeldingRunner)(args)
+    node.report['planning_source']='moveit_scene' if args.use_scene_workpiece else 'scan_receipt' if args.scan_report else 'default_scene'
     code = 0
     try:
         edges = node.read_object()
@@ -640,8 +720,10 @@ def main():
             selected = geometry.select(args.edge)
             seams = selected
         else:
-            face = args.face or ('z_plus' if 'z_plus' in geometry.contours else next(iter(geometry.contours)))
-            selected = [e for e in edges if face in e.faces]
+            face = args.face or (geometry.selectable_seams[0] if geometry.selectable_seams else
+                                'z_plus' if 'z_plus' in geometry.contours else next(iter(geometry.contours)))
+            parent=geometry.contour(face).face_id or face
+            selected = [e for e in edges if parent in e.faces]
             seams = [geometry.contour(face)]
         paths = [(edge, *edge.path(args.begin, args.end, args.offset, args.step, math.radians(args.roll)))
                  for edge in seams]

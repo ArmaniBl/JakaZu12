@@ -104,6 +104,10 @@ class FaceContour:
     id: str
     vertices: np.ndarray
     outward: np.ndarray
+    label: str = ''
+    kind: str = 'outer'
+    face_id: str = ''
+    loops: object = None
 
     @property
     def length(self):
@@ -170,6 +174,7 @@ class WorkpieceGeometry:
     shape: str
     edges: list
     contours: dict
+    selectable_seams: tuple = ()
 
     def contour(self, name):
         if name not in self.contours:
@@ -197,6 +202,10 @@ class CircleContour:
     basis: np.ndarray
     outward: np.ndarray
     faces: tuple
+    label: str = ''
+    kind: str = 'outer'
+    face_id: str = ''
+    loops: object = None
 
     @property
     def length(self):
@@ -248,8 +257,8 @@ def cylinder_geometry(dimensions, center=(0, 0, 0), orientation=(0, 0, 0, 1)):
 def mesh_geometry(vertices, triangles, center=(0, 0, 0), orientation=(0, 0, 0, 1)):
     """Connected coplanar triangles form a face; triangulation diagonals are removed.
 
-    Winding defines outward normals. Holes and nonmanifold surfaces are rejected
-    rather than inventing a seam across a gap. Units are meters.
+    Each boundary loop is a separate seam, including holes. Boundaries are never
+    connected across empty space. Nonmanifold surfaces are rejected. Units are meters.
     """
     vertices = np.asarray(vertices, dtype=float)
     triangles = np.asarray(triangles)
@@ -269,7 +278,8 @@ def mesh_geometry(vertices, triangles, center=(0, 0, 0), orientation=(0, 0, 0, 1
     normals, incident = [], {}
     for index, (a, b, c) in enumerate(triangles):
         normal = np.cross(vertices[b]-vertices[a], vertices[c]-vertices[a])
-        if np.linalg.norm(normal) < 1e-12:
+        scale = np.linalg.norm(vertices[b]-vertices[a])*np.linalg.norm(vertices[c]-vertices[a])
+        if np.linalg.norm(normal) < max(1e-18, scale*1e-8):
             raise ValueError('Mesh contains degenerate triangles')
         normals.append(normal/np.linalg.norm(normal))
         for u, v in ((a, b), (b, c), (c, a)):
@@ -326,22 +336,32 @@ def mesh_geometry(vertices, triangles, center=(0, 0, 0), orientation=(0, 0, 0, 1
             adjacent.setdefault(v, []).append(u)
         if not adjacent or any(len(v) != 2 for v in adjacent.values()):
             raise ValueError('Mesh face has an invalid boundary')
-        start = min(adjacent)
-        order = [start]
-        previous, current = None, start
-        while True:
-            nxt = next(v for v in adjacent[current] if v != previous)
-            if nxt == start:
-                break
-            if nxt in order:
-                raise ValueError('Mesh face boundary is not simple')
-            order.append(nxt)
-            previous, current = current, nxt
-        if len(order) != len(adjacent):
-            raise ValueError('Mesh face contains holes; split it into simple faces')
-        points = vertices[order]
-        area = np.sum(np.cross(points, np.roll(points, -1, axis=0)), axis=0)
-        if np.dot(area, normal) < 0:
-            points = points[::-1]
-        contours[f'face_{f}'] = FaceContour(f'contour:face_{f}', np.vstack((points, points[0])), normal)
+        remaining=set(adjacent);loops=[]
+        while remaining:
+            start=min(remaining);order=[start];previous,current=None,start
+            while True:
+                nxt=next(v for v in adjacent[current] if v!=previous)
+                if nxt==start:break
+                if nxt in order:raise ValueError('Mesh face boundary is not simple')
+                order.append(nxt);previous,current=current,nxt
+            remaining.difference_update(order)
+            points=vertices[order]
+            area=float(np.dot(np.sum(np.cross(points,np.roll(points,-1,axis=0)),axis=0),normal))
+            if abs(area)<1e-18:raise ValueError('Degenerate mesh boundary loop')
+            if area<0:points=points[::-1]
+            loops.append((abs(area),np.vstack((points,points[0]))))
+        loops.sort(key=lambda item:-item[0])
+        face_id=f'face_{f}'
+        side='Верхний' if normal[2]>.7 else 'Нижний' if normal[2]<-.7 else f'Боковой {f+1}'
+        paths=[item[1] for item in loops]
+        for index,points in enumerate(paths):
+            key=face_id if index==0 else f'{face_id}_hole_{index}'
+            if index==0:
+                label=f'{side} внешний контур'
+            else:
+                spread=np.linalg.svd(points[:-1]-points[:-1].mean(0),compute_uv=False)
+                feature='прорези' if spread[0]>1.8*spread[1] else 'отверстия'
+                label=f'{side} контур {feature} {index}'
+            contours[key]=FaceContour('contour:'+key,points,normal,label,
+                'outer' if index==0 else 'hole',face_id,paths if index==0 else None)
     return WorkpieceGeometry('mesh', edges, contours)

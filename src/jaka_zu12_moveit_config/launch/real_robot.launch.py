@@ -6,7 +6,8 @@ from moveit_configs_utils.launches import (
     generate_static_virtual_joint_tfs_launch,
 )
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, LogInfo
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, GroupAction, LogInfo
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetRemap
 from launch_ros.parameter_descriptions import ParameterValue
@@ -26,6 +27,15 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument("scan_preview", default_value="false", choices=["true", "false"],
+                                  description="Show scanner cloud and automatically fit preliminary CAD while idle"),
+            DeclareLaunchArgument("scan_preview_script", default_value="",
+                                  description="Path to workspace run_scan_preview.sh"),
+            ExecuteProcess(
+                cmd=["bash", LaunchConfiguration("scan_preview_script")],
+                condition=IfCondition(LaunchConfiguration("scan_preview")),
+                output="screen",
+            ),
             DeclareLaunchArgument(
                 "ip",
                 default_value="10.5.5.100",
@@ -67,6 +77,7 @@ def generate_launch_description():
             ),
             GroupAction(
                 [
+                    Node(package="jaka_zu12_moveit_config", executable="table_grid.py", output="screen"),
                     SetRemap(src="/joint_states", dst=joint_states_topic),
                     SetRemap(
                         src="/jaka_zu12_controller/follow_joint_trajectory",

@@ -26,6 +26,7 @@ from .runner import object_geometry
 from .profiles import load_profile
 from .web_control import Controller, Settings
 from .robot_view import robot_snapshot
+from .scan_progress import monitor_progress
 
 
 def pending_request(future, requested, now, timeout=3.):
@@ -177,6 +178,7 @@ def make_handler(controller, static, token, port):
                 assets = {"/": ("index.html", "text/html; charset=utf-8"),
                           "/favicon.svg": ("favicon.svg", "image/svg+xml"),
                           "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                          "/scan.js": ("scan.js", "text/javascript; charset=utf-8"),
                           "/style.css": ("style.css", "text/css; charset=utf-8")}
                 if url.path in assets:
                     name, mime = assets[url.path]
@@ -237,6 +239,8 @@ def main():
     stop = threading.Event()
     thread = threading.Thread(target=monitor, args=(controller, stop), daemon=True)
     thread.start()
+    if profile.real:
+        threading.Thread(target=monitor_progress, args=(controller, stop), daemon=True).start()
     server.timeout = .3
     def interrupt(*_args):
         raise KeyboardInterrupt

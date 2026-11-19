@@ -172,10 +172,15 @@ class ProfileTests(unittest.TestCase):
         stub.get_publishers_info_by_topic.return_value.append(SimpleNamespace(node_name='_Graph_ROS'))
         with self.assertRaises(RuntimeError): WeldingRunner.wait_for_robot_publisher(stub, timeout=0.)
 
-    def test_mesh_hole_is_rejected(self):
+    def test_mesh_hole_is_separate_closed_contour(self):
         vertices = [[0,0,0],[3,0,0],[3,3,0],[0,3,0],[1,1,0],[2,1,0],[2,2,0],[1,2,0]]
         triangles = [[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]]
-        with self.assertRaisesRegex(ValueError, 'holes'): mesh_geometry(vertices,triangles)
+        geometry=mesh_geometry(vertices,triangles)
+        self.assertEqual(len(geometry.contours),2)
+        self.assertAlmostEqual(geometry.contour('face_0').length,12.)
+        self.assertAlmostEqual(geometry.contour('face_0_hole_1').length,4.)
+        seam,_,_=geometry.contour('face_0_hole_1').path(offset=.03,step=.1)
+        self.assertTrue(np.all((seam[:,:2]>=1.)&(seam[:,:2]<=2.)))
 
 
 if __name__ == '__main__': unittest.main()

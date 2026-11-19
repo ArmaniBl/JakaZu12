@@ -8,6 +8,8 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>jaka_description</exec_depend>
   <exec_depend>jaka_planner</exec_depend>
   <exec_depend>ur10_isaac_moveit_config</exec_depend>

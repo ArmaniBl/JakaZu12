@@ -18,6 +18,7 @@ from .geometry import FACES, box_edges, face_contour, select_edges
 from .geometry import WorkpieceGeometry
 from .profiles import ISAAC
 from .orientation import tilted_orientation
+from .workpiece_model import preview_object
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -99,16 +100,24 @@ def geometry_payload(edges, settings, demo=False):
     geometry = edges if isinstance(edges, WorkpieceGeometry) else WorkpieceGeometry(
         'box', edges, {f: face_contour(edges, f) for f in FACES})
     edges = geometry.edges
-    faces = list(geometry.contours.values())
-    face = settings.face if settings.face in geometry.contours else next(iter(geometry.contours))
+    faces = [(name,c) for name,c in geometry.contours.items() if c.kind not in ('hole','weld')]
+    choices=geometry.selectable_seams or tuple(geometry.contours)
+    face = settings.face if settings.face in choices else max(choices,
+        key=lambda name:(float(geometry.contours[name].outward[2]),geometry.contours[name].kind!='hole',geometry.contours[name].length))
     edge = settings.edge if settings.edge in {e.id for e in edges} else edges[0].id
     selected = geometry.contour(face) if settings.selection == 'face' else geometry.select([edge])[0]
     seam, tool, orientation = selected.path(settings.begin, settings.end, settings.offset,
                                            settings.step, math.radians(settings.roll))
     orientation=tilted_orientation(orientation,settings.tilt,settings.tilt_direction)
     return {"demo": demo, "shape": geometry.shape, 'selected_face': face, 'selected_edge': edge,
-            "faces": [{"id": c.id.split(":", 1)[1], "vertices": c.vertices[:-1].tolist(),
-                                     "normal": c.outward.tolist(), "length": c.length} for c in faces],
+            "faces": [{"id": name, "vertices": c.vertices[:-1].tolist(),
+                       "loops": [v[:-1].tolist() for v in c.loops] if c.loops is not None else [c.vertices[:-1].tolist()],
+                       "normal": c.outward.tolist(), "length": c.length} for name,c in faces],
+            "seams": [{"id": name,"label": c.label or name,"kind": c.kind,
+                       "face_id": c.face_id or name,"vertices": c.vertices.tolist(),
+                       "normal": c.outward.tolist(),"length_m": c.length}
+                       for name,c in geometry.contours.items() if name in choices],
+            "selected_surface": geometry.contours[face].face_id or face,
             "edges": [{"id": e.id, "faces": e.faces, "start": e.start.tolist(),
                        "end": e.end.tolist(), "length": e.length,
                        'vertices': (e.vertices.tolist() if hasattr(e, 'vertices') else [e.start.tolist(), e.end.tolist()])} for e in edges],
@@ -131,6 +140,7 @@ class Controller:
         self.job_process = None
         self.scene_process = None
         self.job = None
+        self.scan_progress = dict(state='WAITING', observed_unix=0.)
         self.scene_stopping = False
         self.telemetry = {"isaac": False, "feedback": False, "moveit": False,
                           "controller": False, "objects": [], "error": None,
@@ -140,7 +150,6 @@ class Controller:
         self.last_telemetry = 0.0
         self.report_root = self.workspace / "diagnostics" / "web"
         self.report_root.mkdir(parents=True, exist_ok=True)
-
     def log(self, source, text):
         with self.lock:
             self.sequence += 1
@@ -154,7 +163,10 @@ class Controller:
                 health.update(isaac=False, feedback=False, moveit=False, controller=False, objects=[])
                 health["robot"] = {"available": False, "frame": "world", "points": [],
                                    "reason": "Нет актуальной связи с ROS"}
+            from .scan_timestamp import latest_update
             return {"health": health, 'robot_profile': self.profile.payload(), "job": dict(self.job) if self.job else None,
+                    "scan_updated_unix": latest_update(self.workspace),
+                    "scan_progress": dict(self.scan_progress),
                     "history": [dict(job) for job in reversed(self.jobs[-12:])],
                     "scene": {"owned": bool(self.scene_process and self.scene_process.poll() is None),
                               "stopping": self.scene_stopping},
@@ -164,6 +176,21 @@ class Controller:
         with self.lock:
             live = self.object_edges.get(settings.object)
             edges = live or box_edges([.3, .3, .2], [-1, 0, .1])
+        if live is None and self.profile.real and settings.object=='welding_workpiece':
+            path=self.workspace/'src/jaka_zu12_moveit_config/config/workpiece_model.json'
+            if path.is_file():
+                from .runner import object_geometry
+                stamp=(str(path),path.stat().st_mtime_ns)
+                cached=getattr(self,'cached_cad_geometry',None)
+                if cached is None or cached[0]!=stamp:
+                    model=json.loads(path.read_text())
+                    edges=object_geometry(preview_object(model),self.profile.frame)
+                    self.cached_cad_geometry=(stamp,model,edges)
+                else:
+                    _,model,edges=cached
+                result=geometry_payload(edges,settings,demo=True)
+                result.update(source='cached_cad',part_name=model['part_name'])
+                return result
         return geometry_payload(edges, settings, demo=live is None)
 
     def _read(self, process, source, job=None):
@@ -238,6 +265,8 @@ class Controller:
                        "phase": "Запуск", "started": time.time(), "stopping": False, "report": False}
                 environment = dict(os.environ, PYTHONUNBUFFERED="1", RCUTILS_COLORIZED_OUTPUT="0")
                 argv = settings.argv(self.executable, mode, output)+['--robot', self.profile.name]
+                if self.profile.real:
+                    argv += ['--use-scene-workpiece']
                 if self.robot_config:
                     argv += ['--robot-config', str(self.robot_config)]
                 if self.return_pose:

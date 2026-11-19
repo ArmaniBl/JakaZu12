@@ -4,3 +4,5 @@
 /diagnostics/
 **/__pycache__/
 *.pyc
+/.venv-rangevision/
+/scans/

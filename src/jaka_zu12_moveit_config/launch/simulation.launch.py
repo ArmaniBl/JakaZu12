@@ -18,6 +18,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            Node(package="jaka_zu12_moveit_config", executable="table_grid.py", output="screen"),
             generate_static_virtual_joint_tfs_launch(moveit_config),
             generate_rsp_launch(moveit_config),
             generate_move_group_launch(moveit_config),

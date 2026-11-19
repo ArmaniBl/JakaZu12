@@ -4,12 +4,44 @@ const defaults = {object:'welding_workpiece',selection:'face',face:'z_plus',edge
 const faceNames = {z_plus:'Верхняя грань · Z+',z_minus:'Нижняя грань · Z−',x_plus:'Ближняя грань · X+',x_minus:'Дальняя грань · X−',y_plus:'Боковая грань · Y+',y_minus:'Боковая грань · Y−'};
 const axisName = (s) => s.replace('_plus','+').replace('_minus','−').toUpperCase();
 const faceLabel = (id) => faceNames[id] || `Грань ${id}`;
+const seamLabel = (id) => geometry?.seams?.find(s=>s.id===id)?.label || faceLabel(id);
 const robotName = () => state?.robot_profile?.real ? 'JAKA ZU12' : 'UR10';
 let selection='face', token='', lastSequence=0, state=null, geometry=null, geometryTimer=null, geometryVersion=0;
+let geometryLoading=false;
 let busy=false, polling=false, logLines=0, toastTimer=null, objectSignature='', serverConnected=false;
 let yaw=.75, pitch=.48, zoom=1, dragging=null, dragMoved=false;
 let sceneFraming=null, robotAvailable=false, lastRobotSignature='';
+let focusWorkpiece=false,hoverSeam=null;
 const SVG_NS='http://www.w3.org/2000/svg';
+const seamPicker=document.createElement('div');seamPicker.className='field-block seam-picker';
+seamPicker.innerHTML='<label class="field-label" for="seam-filter">Швы детали</label><select id="seam-filter"><option value="top">Верхняя поверхность</option><option value="all">Все поверхности</option></select><div id="seam-list" class="seam-list" aria-label="Выбор шва"></div><p class="help-text" id="seam-help">Выберите контур в списке или на модели. Затем задайте участок и постройте план.</p>';
+$('face').closest('.field-block').after(seamPicker);
+const focusButton=document.createElement('button');focusButton.id='focus-workpiece';focusButton.className='view-button';focusButton.textContent='Деталь крупно';focusButton.type='button';document.querySelector('.viewport-toolbar').prepend(focusButton);
+$('object').options[0].textContent='Модель детали';
+$('workpiece-shape').add(new Option('Текущая CAD-модель','cad'));
+function visibleSeams(){return (geometry?.seams||[]).filter(s=>$('seam-filter').value==='all'||s.normal[2]>.5);}
+function pickSeam(id){
+  if(isLocked())return;
+  selection='face';$('face').value=id;
+  for(const key of ['begin','begin-number'])$(key).value=0;
+  for(const key of ['end','end-number'])$(key).value=100;
+  hoverSeam=null;changed();renderSeams();
+}
+function renderSeams(){
+  const list=$('seam-list');list.replaceChildren();
+  const seams=visibleSeams();
+  seams.forEach((seam,index)=>{
+    const button=document.createElement('button');button.type='button';button.className='seam-card';
+    button.setAttribute('aria-pressed',String(selection==='face'&&$('face').value===seam.id));button.dataset.seam=seam.id;button.disabled=isLocked();
+    button.setAttribute('aria-label',`${seamLabel(seam.id)}, ${Math.round(seam.length_m*1000)} мм`);
+    const number=document.createElement('span');number.className='seam-number';number.textContent=String(index+1);
+    const description=document.createElement('span');const title=document.createElement('strong');title.textContent=seamLabel(seam.id);
+    const length=document.createElement('small');length.textContent=`${Math.round(seam.length_m*1000)} мм · ${seam.kind==='weld'?'сварной шов':seam.kind==='hole'?'внутренний шов':'внешний контур'}`;
+    description.append(title,length);button.append(number,description);
+    button.onclick=()=>pickSeam(seam.id);button.onmouseenter=()=>{hoverSeam=seam.id;draw();};button.onmouseleave=()=>{hoverSeam=null;draw();};list.append(button);
+  });
+  $('seam-help').textContent=seams.length?'Выберите контур в списке или нажмите его линию на модели. Для части шва задайте начало и конец ниже.':'Нет контуров на этой поверхности. Выберите «Все поверхности».';
+}
 
 function notify(message,error=false){
   $('toast').textContent=message;$('toast').classList.toggle('error',error);$('toast').hidden=false;
@@ -52,27 +84,42 @@ function changed(){
   $('scaling-value').classList.toggle('high-speed',highSpeed);
   $('range-fill').style.left=`${Math.min(100,Math.max(0,s.begin*100))}%`;
   $('range-fill').style.width=`${Math.max(0,(s.end-s.begin)*100)}%`;
-  $('selection-title').textContent=selection==='face'?faceLabel(s.face):`Ребро ${s.edge.split('__').map(axisName).join(' / ')}`;
+  $('selection-title').textContent=selection==='face'?seamLabel(s.face):`Ребро ${s.edge.split('__').map(axisName).join(' / ')}`;
+  if(geometry)renderSeams();
   try{localStorage.setItem('weld-studio-settings',JSON.stringify(s));}catch{}
   if(geometry)draw();
   clearTimeout(geometryTimer);geometryTimer=setTimeout(refreshGeometry,130);updateControls();
 }
 async function refreshGeometry(){
   if(!token||!validSettings())return;
+  if(geometryLoading)return;
+  geometryLoading=true;
+  const requested=readSettings(),requestKey=JSON.stringify(requested),requestSignature=objectSignature;
   const version=++geometryVersion;
-  try{const result=await api('/api/geometry',readSettings());if(version!==geometryVersion)return;
+  try{const result=await api('/api/geometry',requested);if(version!==geometryVersion||JSON.stringify(readSettings())!==requestKey)return;
       const oldShape=geometry?JSON.stringify(geometry.faces.map(f=>f.vertices)):null;
       geometry=result;if(oldShape!==JSON.stringify(result.faces.map(f=>f.vertices)))sceneFraming=null;
+      if(oldShape===null&&result.shape==='mesh'){focusWorkpiece=true;$('show-robot').checked=false;}
       const options=(id,items,value)=>{$(id).replaceChildren(...items.map(([key,label])=>Object.assign(document.createElement('option'),{value:key,textContent:label})));$(id).value=value;};
-      options('face',result.faces.map(f=>[f.id,faceLabel(f.id)]),result.selected_face||readSettings().face);
+      options('face',(result.seams||result.faces).map(f=>[f.id,f.label||faceLabel(f.id)]),result.selected_face||readSettings().face);
       options('edge',result.edges.map(e=>[e.id,e.id]),result.selected_edge||readSettings().edge);
-      $('selection-title').textContent=selection==='face'?faceLabel($('face').value):`Ребро ${$('edge').value}`;
+      $('selection-title').textContent=selection==='face'?seamLabel($('face').value):`Ребро ${$('edge').value}`;
+      hoverSeam=null;renderSeams();
+      $('object-shape').textContent=result.shape.toUpperCase();
+      if(result.shape==='mesh'){
+        $('workpiece-shape').value='cad';
+        const option=$('object').selectedOptions[0];if(option)option.textContent=result.part_name||'Деталь · CAD';
+      }
       const mm=Math.round(result.length*1000).toLocaleString('ru-RU');
     $('path-length').replaceChildren(document.createTextNode(mm+' '),Object.assign(document.createElement('span'),{textContent:'мм'}));
     $('range-summary').textContent=`${Math.round((readSettings().end-readSettings().begin)*100)}% ${selection==='face'?'периметра':'ребра'} · ${mm} мм`;
-    $('model-source').textContent=result.demo?'Образец · сцена ещё не подключена':'Геометрия из сцены MoveIt';
+    $('model-source').textContent=result.source==='cached_cad'?`${result.part_name} · сохранённая CAD, ожидаем MoveIt`:result.demo?'Образец · сцена ещё не подключена':'Геометрия из сцены MoveIt';
     $('scene-view-label').textContent=result.demo?'ОБРАЗЕЦ':'LIVE GEOMETRY';draw();
   }catch(error){notify(error.message,true);}
+  finally{
+    geometryLoading=false;
+    if(JSON.stringify(readSettings())!==requestKey||objectSignature!==requestSignature){clearTimeout(geometryTimer);geometryTimer=setTimeout(refreshGeometry,0);}
+  }
 }
 function svg(tag,attrs={},parent){const node=document.createElementNS(SVG_NS,tag);for(const [key,value]of Object.entries(attrs))node.setAttribute(key,String(value));if(parent)parent.append(node);return node;}
 function draw(){
@@ -85,11 +132,12 @@ function draw(){
   const showRobot=$('show-robot').checked&&robot&&!geometry.demo;
   const robotPoints=showRobot?robot.points:[];
   const framingPoints=[...points,...robotPoints.map(p=>p.position),...geometry.tool];
-  let low=[0,1,2].map(i=>Math.min(...framingPoints.map(p=>p[i]))-.12);
-  let high=[0,1,2].map(i=>Math.max(...framingPoints.map(p=>p[i]))+.12);
+  const margin=focusWorkpiece ? .015 : .12;
+  let low=[0,1,2].map(i=>Math.min(...framingPoints.map(p=>p[i]))-margin);
+  let high=[0,1,2].map(i=>Math.max(...framingPoints.map(p=>p[i]))+margin);
   if(!sceneFraming||low.some((v,i)=>v<sceneFraming.low[i]-.05*sceneFraming.extent)||high.some((v,i)=>v>sceneFraming.high[i]+.05*sceneFraming.extent)){
     if(sceneFraming){low=low.map((v,i)=>Math.min(v,sceneFraming.low[i]));high=high.map((v,i)=>Math.max(v,sceneFraming.high[i]));}
-    sceneFraming={low,high,center:low.map((v,i)=>(v+high[i])/2),extent:Math.max(...low.map((v,i)=>high[i]-v),.3)};
+    sceneFraming={low,high,center:low.map((v,i)=>(v+high[i])/2),extent:Math.max(...low.map((v,i)=>high[i]-v),focusWorkpiece ? .05 : .3)};
   }
   const {center,extent}=sceneFraming,scale=360/extent*zoom;
   $('robot-status').textContent=robot?(geometry.demo?`Поза ${robotName()} получена · ожидаем деталь в MoveIt`:`${robotName()} · текущая поза из ROS`):serverConnected?(state?.health?.robot?.reason||'Ожидаем состояние робота'):'Нет связи с панелью';
@@ -113,7 +161,7 @@ function draw(){
     const b=[[center[0]+delta,center[1]-extent*1.4,ground],[center[0]+delta,center[1]+extent*1.4,ground]];
     for(const pair of [a,b])svg('polyline',{points:pair.map(projectString).join(' '),fill:'none'},grid);
   }
-  const s=readSettings(),selectedFaces=selection==='face'?[s.face]:(geometry.edges.find(e=>e.id===s.edge)?.faces||[]);
+  const s=readSettings(),selectedFaces=selection==='face'?[geometry.selected_surface||s.face]:(geometry.edges.find(e=>e.id===s.edge)?.faces||[]);
   const light=[-.3,-.2,1];
   const drawables=[];
   for(const face of geometry.faces){
@@ -121,8 +169,9 @@ function draw(){
     const selected=selectedFaces.includes(face.id);
     const shade=.45+.4*Math.max(0,face.normal.reduce((v,n,i)=>v+n*light[i],0));
     const fill=selected?`rgb(${Math.round(160*shade+30)},${Math.round(104*shade+22)},${Math.round(58*shade+14)})`:`rgb(${Math.round(52*shade+26)},${Math.round(70*shade+30)},${Math.round(94*shade+34)})`;
-    const polygon=svg('polygon',{points:face.vertices.map(projectString).join(' '),fill,stroke:selected?'#d49b65':'#6b829b','stroke-width':selected?'1.5':'1','stroke-linejoin':'round',tabindex:selection==='face'?'0':'-1',role:'button','aria-label':faceLabel(face.id)},root);
-    const pick=()=>{if(dragMoved||isLocked()||selection!=='face')return;$('face').value=face.id;changed();};
+    const path=(face.loops||[face.vertices]).map(loop=>'M '+loop.map(projectString).join(' L ')+' Z').join(' ');
+    const polygon=svg('path',{d:path,'fill-rule':'evenodd',fill,stroke:selected?'#d49b65':'#6b829b','stroke-width':selected?'1.5':'1','stroke-linejoin':'round',tabindex:selection==='face'?'0':'-1',role:'button','aria-label':seamLabel(face.id)},root);
+    const pick=()=>{if(dragMoved||isLocked()||selection!=='face')return;pickSeam(face.id);};
     polygon.addEventListener('click',pick);polygon.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick();}});
     svg('title',{},polygon).textContent=faceLabel(face.id);
     }});
@@ -168,6 +217,13 @@ function draw(){
       hit.addEventListener('click',pick);hit.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();pick();}});svg('title',{},hit).textContent=edge.id;
     }
   }
+  if(selection==='face')for(const seam of visibleSeams()){
+    const active=seam.id===s.face,hover=seam.id===hoverSeam;
+    svg('polyline',{points:seam.vertices.map(projectString).join(' '),fill:'none',stroke:hover?'#79e5c5':active?'#ffc58a':'#91acc3','stroke-width':hover||active?'3':'1.5','stroke-opacity':hover||active?'1':'.65','pointer-events':'none'},root);
+    const hit=svg('polyline',{points:seam.vertices.map(projectString).join(' '),fill:'none',stroke:'transparent','stroke-width':'12',tabindex:'0',role:'button','aria-label':seamLabel(seam.id),'data-seam-hit':seam.id},root);
+    hit.onclick=()=>{if(!dragMoved)pickSeam(seam.id);};hit.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pickSeam(seam.id);}};
+    svg('title',{},hit).textContent=seamLabel(seam.id);
+  }
   svg('polyline',{points:geometry.seam.map(projectString).join(' '),fill:'none',stroke:'#ffc58a','stroke-width':'3','stroke-linecap':'round','stroke-linejoin':'round','pointer-events':'none'},root);
   svg('polyline',{points:geometry.tool.map(projectString).join(' '),fill:'none',stroke:'#79e5c5','stroke-width':'2.5','stroke-dasharray':'7 5','stroke-linejoin':'round','pointer-events':'none'},root);
   const first=project(geometry.tool[0]);svg('circle',{cx:first[0],cy:first[1],r:5,fill:'#76e6c2',stroke:'#143d34','stroke-width':'3','pointer-events':'none'},root);
@@ -189,7 +245,7 @@ function updateControls(){
   $('robot-tip').textContent=`6 осей · ${state?.robot_profile?.tip||'tool0'}`;
   $('source-name').textContent=real?'JAKA SDK':'Isaac Sim';
   $('controller-name').textContent=`Контроллер ${robotName()}`;
-  $('return-note').textContent=real?'После прохода — возврат в позу начала операции или заданную конфигурацию.':'После прохода — возврат в сохранённую позу.';
+  $('return-note').textContent=real?'После прохода — подъём на 25 см с сохранением ориентации.':'После прохода — возврат в сохранённую позу.';
   const canPreview=serverConnected&&h.moveit&&objectReady&&!isLocked()&&!busy&&validSettings();
   $('preview').disabled=!canPreview;$('plan').disabled=!(canPreview&&h.isaac&&h.feedback);$('execute').disabled=!(canPreview&&h.isaac&&h.feedback&&h.controller);
   $('stop').disabled=!isRunning()||Boolean(state?.job?.stopping)||busy;
@@ -201,9 +257,11 @@ function updateControls(){
   $('workpiece-apply').textContent=busy?'Подождите…':'Применить в RViz';
   const currentObject=(h.objects||[]).find(o=>o.id===$('object').value);
   if(currentObject&&!busy&&currentObject.shape){
-    $('workpiece-shape').value=currentObject.shape==='mesh'?'prism':currentObject.shape;
+    $('workpiece-shape').value=currentObject.shape==='mesh'?'cad':currentObject.shape;
     $('object-shape').textContent=currentObject.shape.toUpperCase();
   }
+  if($('workpiece-shape').value==='cad')$('workpiece-apply').disabled=true;
+  if($('workpiece-shape').value==='cad')$('workpiece-hint').textContent='Используется текущая модель детали в MoveIt/RViz. Выберите шов на модели или в списке ниже.';
   $('reset').disabled=isLocked();
   const healthy=[h.isaac&&h.feedback,h.moveit,h.controller,objectReady];
   for(const [i,name]of ['isaac','moveit','controller','object'].entries()){$('health-'+name).textContent=healthy[i]?'✓':'○';$('health-'+name).classList.toggle('good',Boolean(healthy[i]));$('dot-'+name).classList.toggle('good',Boolean(healthy[i]));}
@@ -260,6 +318,7 @@ async function start(mode){
 async function sceneAction(action){busy=true;updateControls();try{await api('/api/scene',{action,rviz:$('rviz').checked});await poll();}catch(error){notify(error.message,true);}finally{busy=false;updateControls();}}
 
 async function applyWorkpiece(){
+  if($('workpiece-shape').value==='cad')return;
   if(busy||isLocked())return;
   const shape=$('workpiece-shape').value,object=$('object').value;
   busy=true;updateControls();
@@ -284,6 +343,8 @@ $('settings-form').addEventListener('submit',e=>e.preventDefault());
 for(const id of ['speed','offset','clearance','step','scaling','roll','face','edge','object','orientation-mode','tilt','tilt-direction','max-tilt','orientation-timeout'])$(id).addEventListener('input',changed);
 for(const key of ['begin','end']){for(const suffix of ['','-number'])$(key+suffix).addEventListener('input',()=>{$(key+(suffix?'':'-number')).value=$(key+suffix).value;changed();});}
 $('mode-face').onclick=()=>{selection='face';changed();};$('mode-edge').onclick=()=>{selection='edge';changed();};
+$('seam-filter').onchange=()=>{renderSeams();draw();};
+$('focus-workpiece').onclick=()=>{focusWorkpiece=true;$('show-robot').checked=false;sceneFraming=null;zoom=1;draw();};
 $('full-range').onclick=()=>{for(const id of ['begin','begin-number'])$(id).value=0;for(const id of ['end','end-number'])$(id).value=100;changed();};
 $('reset').onclick=()=>applySettings(defaults);
 $('preview').onclick=()=>start('preview');$('plan').onclick=()=>start('plan');$('execute').onclick=()=>start('execute');
@@ -294,7 +355,7 @@ $('clear-log').onclick=()=>{$('logs').replaceChildren();logLines=0;$('log-count'
 $('export-settings').onclick=()=>{const blob=new Blob([JSON.stringify(readSettings(),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='welding-settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('selected',b===button));yaw=button.dataset.view==='top'?0:.75;pitch=button.dataset.view==='top'?Math.PI/2:.48;zoom=1;draw();});
 $('fit-view').onclick=()=>{yaw=.75;pitch=.48;zoom=1;sceneFraming=null;draw();};
-$('show-robot').addEventListener('change',()=>{zoom=1;sceneFraming=null;draw();});
+$('show-robot').addEventListener('change',()=>{if($('show-robot').checked)focusWorkpiece=false;zoom=1;sceneFraming=null;draw();});
 $('scene-svg').addEventListener('pointerdown',event=>{dragging={x:event.clientX,y:event.clientY,yaw,pitch};dragMoved=false;});
 window.addEventListener('pointermove',event=>{if(!dragging)return;const dx=event.clientX-dragging.x,dy=event.clientY-dragging.y;if(Math.abs(dx)+Math.abs(dy)<5&&!dragMoved)return;dragMoved=true;$('scene-svg').classList.add('dragging');yaw=dragging.yaw+dx*.009;pitch=Math.min(1.55,Math.max(-.7,dragging.pitch+dy*.008));draw();});
 window.addEventListener('pointerup',()=>{dragging=null;$('scene-svg').classList.remove('dragging');setTimeout(()=>dragMoved=false,0);});

@@ -1,0 +1,118 @@
+{
+  "schema": "jaka-preview-reference/v1",
+  "registered": false,
+  "scope": "saved visual placement for this station; not verified robot calibration",
+  "anchor": {
+    "frame_signature": "64fbde949c9770566e8d5c627c0c8102055aed54648cf9fa2952115a63caf7b5",
+    "camera_origin_m": [
+      0.040699462060178736,
+      -0.07906277185984095,
+      0.443213027253072
+    ],
+    "registered": false,
+    "height_reference": {
+      "source": "operator: wave-butt resting on table",
+      "method": "CAD bottom at table top; measured top plane at 6 mm",
+      "target_height_m": 0.006,
+      "registered": false,
+      "capture_id": "8f5a1f4c7df444bc97917a6f457fd8a4"
+    }
+  },
+  "orientation": {
+    "camera_to_world_rotation": [
+      [
+        0.14546587665838043,
+        0.5549429604394265,
+        0.8190714189780607
+      ],
+      [
+        0.9893620779626876,
+        -0.08030827128109892,
+        -0.12129822856577406
+      ],
+      [
+        -0.001535388342464176,
+        0.8280029542354101,
+        -0.5607216335759407
+      ]
+    ],
+    "reference_normal_camera": [
+      -0.001535388342464176,
+      0.8280029542354101,
+      -0.5607216335759407
+    ],
+    "plane_inliers": 4335,
+    "reference_point_count": 5837,
+    "estimated_down_angle_deg": 34.10571821452551,
+    "table_yaw_deg": -90.0,
+    "heading": "increasing_rows",
+    "source": "operator: lower short edge at smaller numbered rows Q3-S3; nearby round rim T3; visual table placement, not measured robot calibration",
+    "registered": false,
+    "frame_signature": "64fbde949c9770566e8d5c627c0c8102055aed54648cf9fa2952115a63caf7b5",
+    "reference_capture_id": "8f5a1f4c7df444bc97917a6f457fd8a4",
+    "operator_table_reference": {
+      "source": "operator: lower short edge at smaller numbered rows Q3-S3; nearby round rim T3",
+      "capture_id": "8f5a1f4c7df444bc97917a6f457fd8a4",
+      "lower_edge_target_addresses": [
+        "Q3",
+        "S3"
+      ],
+      "lower_edge_center_world_m": [
+        -0.3259721795450641,
+        -0.7385125090600122,
+        0.006
+      ],
+      "lower_edge_requested_center_world_m": [
+        -0.315,
+        -0.74,
+        0.006
+      ],
+      "lower_edge_endpoints_world_m": [
+        [
+          -0.3259721795450641,
+          -0.6785125090600121,
+          0.006
+        ],
+        [
+          -0.3259721795450641,
+          -0.7985125090600123,
+          0.006
+        ]
+      ],
+      "circle_target_address": "T3",
+      "circle_target_world_xy_m": [
+        -0.315,
+        -0.84
+      ],
+      "circle_center_world_m": [
+        -0.3040278204549359,
+        -0.8414874909399878,
+        0.04069448444808378
+      ],
+      "circle_error_mm": 11.072549537738285,
+      "method": "single rigid placement with edge parallel to letter direction; balanced measured reference residuals",
+      "metric_scale_unchanged": true,
+      "registered": false
+    },
+    "metric_scale_reference": {
+      "factor": 1.1178180784627967,
+      "source": "operator confirmed physical wave-butt rectangle dimensions 200 x 120 mm",
+      "capture_id": "bfede13a443443a890c78b9d6e3489e3",
+      "measured_dimensions_before_m": [
+        0.17984339693489126,
+        0.10578208244290914
+      ],
+      "expected_dimensions_m": [
+        0.2,
+        0.12
+      ],
+      "dimensions_after_m": [
+        0.20103220038598218,
+        0.11824512413212583
+      ],
+      "method": "one uniform least-squares unit conversion from measured full top boundary rectangle; no per-axis deformation",
+      "independently_verified": false,
+      "registered": false
+    }
+  }
+}

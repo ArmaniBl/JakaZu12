@@ -1,5 +1,9 @@
 # JakaZu12
 
+Объединённый цикл скан → CAD-поза → MoveIt → выбор прохода: [запуск и калибровка](docs/SCAN_TO_WELD.md).
+
+RangeVision Spectrum (fixed scanner): [export bridge, calibration, scan overlay and workpiece alignment](docs/RANGEVISION.md).
+
 Горелка на UR10 в Isaac и MoveIt: [инструкция](docs/TORCH.md).
 Насадка включена по умолчанию в MoveIt для `./run_sim.sh` и `./run_real.sh`.
 Используются обычные `./weld.sh` и `./run_web.sh`, TCP — `welding_tcp`.
@@ -15,10 +19,57 @@ build and environment scripts. ROS_DISTRO can select the installed distribution.
 ./run_web.sh --port 8090 --robot jaka_real
 ```
 
+При следующем `run_real.sh` загружается `05-wave-butt.step` из `detail_models`:
+прямоугольная заготовка 200×120×6 мм с центральным волнистым стыком.
+Переносимая сетка и шов сохранены в
+`src/jaka_zu12_moveit_config/config/workpiece_models/05-wave-butt.json`,
+текущий выбор — в `config/workpiece_model.json` того же пакета.
+Модель размещается на столе в ранее выбранной области около Q3–Q4.
+
+В панели `http://localhost:8090` выберите **«Центральный стыковой шов»**
+в блоке **«Швы детали»** или нажмите его линию на модели. Длина полного
+прохода — примерно 143 мм; начало и конец задаются в процентах длины шва.
+Это открытый проход по середине 2-миллиметрового зазора из CAD.
+В проверке столкновений участвует вся сетка обеих половин заготовки.
+Автоподгонка использует выбранную модель и сохраняет описание шва;
+прежняя модель из экспорта сканера не подменяет этот выбор.
+
 Automatic drive enable is disabled. Before execution, configure the measured
 TCP, tool mass/centroid and workpiece pose. The dependency installer and Isaac
 UR10 instructions below target Jazzy; Humble needs the corresponding
 ros-humble-* dependencies.
+
+Планирование JAKA ограничено столом с запасом 100 мм с каждой стороны:
+X от −0,54 до 0,46 м, Y от −1,165 до 0,235 м в `world`.
+Невидимые в RViz стенки участвуют в проверках столкновений всей модели робота
+и насадки. Это ограничение MoveIt; ручное управление контроллером его не использует.
+Новые стенки загружаются при `run_real.sh`; без них планирование JAKA отклоняется.
+
+Обычный планировщик JAKA сравнивает до 12 успешно построенных полных маршрутов
+в пределах бюджета времени подбора ориентации; в фиксированном режиме — 4 попытки.
+Выбирается минимум взвешенного движения суставов, максимального отклонения
+сустава от начальной позы и длительности. Оцениваются все этапы, включая подъём.
+Глобальный математический оптимум не гарантируется. Изменение сцены или положения
+робота во время сравнения отменяет выбранный план.
+
+Снимок текущей визуальной привязки облака сохранён в
+`src/jaka_zu12_moveit_config/config/scan_preview_reference.json`.
+Рабочие файлы `scans/preview-anchor.json` и `scans/preview-orientation.json`
+остаются локальными. Для восстановления снимка на этой же станции при
+остановленном просмотрщике облака:
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+snapshot = json.loads(Path('src/jaka_zu12_moveit_config/config/scan_preview_reference.json').read_text())
+Path('scans').mkdir(exist_ok=True)
+for key, name in [('anchor', 'preview-anchor.json'), ('orientation', 'preview-orientation.json')]:
+    Path('scans', name).write_text(json.dumps(snapshot[key], indent=2))
+PY
+```
+
+Снимок не заменяет измеренную калибровку камер или привязку к базе робота.
 
 
 Отчёты о выполненных работах: [docs/reports/README.md](docs/reports/README.md).

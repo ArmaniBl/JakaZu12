@@ -1,0 +1,58 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Displays:
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Table grid A1-X16
+      Enabled: true
+      Topic:
+        Value: /table/grid
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Scanner preview - UNCALIBRATED
+      Enabled: true
+      Topic:
+        Value: /scanner/preview_points
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 255; 160; 40
+      Size (m): 0.0015
+      Style: Points
+      Value: true
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Value: true
+      Cell Size: 0.1
+  Global Options:
+    Fixed Frame: world
+    Background Color: 35; 35; 35
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 1.7
+      Focal Point:
+        X: -0.09
+        Y: -0.465
+        Z: 0.05
+      Pitch: 0.7
+      Yaw: -0.6
+      Target Frame: world
+  Value: true
+Window Geometry:
+  Width: 1100
+  Height: 800
