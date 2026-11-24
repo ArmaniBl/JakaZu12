@@ -4,6 +4,7 @@ import json
 import math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import re
 import secrets
 import signal
 import threading
@@ -16,16 +17,18 @@ from rclpy.signals import SignalHandlerOptions
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from moveit_msgs.srv import GetPlanningScene
+from shape_msgs.msg import SolidPrimitive
 from controller_manager_msgs.srv import ListControllers
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from tf2_ros import Buffer, TransformListener
 from rclpy.action import ActionClient
 from control_msgs.action import FollowJointTrajectory
 
-from .runner import object_geometry
+from .runner import object_geometry, pose_transform
+from .geometry import quaternion
 from .profiles import load_profile
 from .web_control import Controller, Settings
-from .robot_view import robot_snapshot
+from .robot_view import ExecutionAnimation, robot_snapshot
 from .scan_progress import monitor_progress
 
 
@@ -42,14 +45,63 @@ def pending_request(future, requested, now, timeout=3.):
     return future
 
 
+def table_perforations(layout, pose, size):
+    table, grid = layout['table'], layout['grid']
+    width, depth = (table[key] * .001 for key in ('width_mm', 'depth_mm'))
+    pitch, diameter, offset_x, offset_y = (grid[key] * .001 for key in
+                                           ('pitch_mm', 'diameter_mm', 'offset_x_mm', 'offset_y_mm'))
+    columns = math.floor((width - diameter / 2 - offset_x) / pitch) + 1
+    rows = math.floor((depth - diameter / 2 - offset_y) / pitch) + 1
+    yaw = math.radians(layout['world_from_table']['yaw_deg'])
+    c, s = math.cos(yaw), math.sin(yaw)
+    to_local = pose[:2, :2].T @ [[c, -s], [s, c]]
+    holes = []
+    for row in range(rows):
+        for col in range(columns):
+            x, y = to_local @ [offset_x + col * pitch - width / 2, offset_y + row * pitch - depth / 2]
+            if abs(x) + diameter / 2 <= size[0] / 2 and abs(y) + diameter / 2 <= size[1] / 2:
+                holes.append([float(x), float(y)])
+    return {'diameter': diameter, 'centers': holes}
+
+
+def workcell_geometry(objects, frame, table_layout=None):
+    """Render the live planning-scene table and mesh, in their composed poses."""
+    rendered = []
+    for obj in objects:
+        if obj.header.frame_id != frame:
+            continue
+        if obj.id == 'floor' and len(obj.primitives) == len(obj.primitive_poses) == 1:
+            box = obj.primitives[0]
+            if box.type != SolidPrimitive.BOX:
+                continue
+            shape = {'size': list(box.dimensions)}
+            local_pose = obj.primitive_poses[0]
+        elif obj.id == 'welding_workpiece' and len(obj.meshes) == len(obj.mesh_poses) == 1:
+            mesh = obj.meshes[0]
+            shape = {'vertices': [value for p in mesh.vertices for value in (p.x, p.y, p.z)],
+                     'indices': [int(i) for triangle in mesh.triangles for i in triangle.vertex_indices]}
+            local_pose = obj.mesh_poses[0]
+        else:
+            continue
+        pose = pose_transform(obj.pose) @ pose_transform(local_pose)
+        if obj.id == 'floor' and table_layout is not None:
+            shape['perforations'] = table_perforations(table_layout, pose, shape['size'])
+        rendered.append(dict(id=obj.id, position=pose[:3, 3].tolist(),
+                             orientation=quaternion(pose[:3, :3]).tolist(), **shape))
+    return rendered
+
+
 def monitor(controller, stop):
     node = Node("welding_web_monitor")
     profile = controller.profile
+    table_path = controller.workspace/'src/jaka_zu12_moveit_config/config/table_grid.json'
+    table_layout = json.loads(table_path.read_text()) if table_path.is_file() else None
     trajectory = ActionClient(node, FollowJointTrajectory, profile.trajectory_action)
     tf_buffer = Buffer()
     tf_listener = TransformListener(tf_buffer, node)
     raw_time, normalized_time = 0.0, 0.0
     robot_updated = 0.0
+    animation = ExecutionAnimation(node, profile) if profile.real else None
     def raw(message):
         nonlocal raw_time
         if profile.accepts(message) and all(math.isfinite(p) for p in message.position):
@@ -65,6 +117,7 @@ def monitor(controller, stop):
     scene_future = controller_future = None
     last_request, last_scene, last_controllers = 0.0, 0.0, 0.0
     scene_requested = controller_requested = 0.0
+    scene_generation = 0
     try:
         while not stop.is_set():
             rclpy.spin_once(node, timeout_sec=.1)
@@ -72,26 +125,45 @@ def monitor(controller, stop):
             if now-robot_updated >= .2:
                 robot = robot_snapshot(tf_buffer, now-raw_time < 1.5 and now-normalized_time < 1.5,
                                        node.get_clock().now().nanoseconds/1e9, profile.frames, profile.frame)
+                animated_pose = None
+                if animation is not None:
+                    try:
+                        animated_pose = animation.update(now)
+                    except Exception as error:
+                        node.get_logger().warning(f'Workcell animation unavailable: {error}', throttle_duration_sec=5.)
                 with controller.lock:
                     controller.telemetry["robot"] = robot
+                    if profile.real and robot['available']:
+                        controller.last_workcell_pose = robot
+                    controller.animation_pose = animated_pose
                 robot_updated = now
             if scene_future is not None and scene_future.done():
                 try:
                     objects, geometries = [], {}
-                    for obj in scene_future.result().scene.world.collision_objects:
+                    collision_objects = scene_future.result().scene.world.collision_objects
+                    visual_objects = workcell_geometry(collision_objects, profile.frame, table_layout)
+                    for obj in collision_objects:
+                        if not obj.meshes:
+                            continue
                         try:
                             geometry = object_geometry(obj, profile.frame)
                             geometries[obj.id] = geometry
                             objects.append({"id": obj.id, 'shape': geometry.shape,
+                                            'preset': obj.type.key if obj.type.key.startswith('cad:') else None,
                                             "dimensions": list(obj.primitives[0].dimensions) if obj.primitives else [],
                                             "signature": [c.vertices.tolist() for c in geometry.contours.values()]})
                         except ValueError:
                             continue
                     with controller.lock:
-                        controller.object_edges = geometries
-                        controller.telemetry["objects"] = objects
-                        controller.telemetry['error'] = None
-                    last_scene = now
+                        if scene_generation == controller.scene_generation:
+                            controller.object_edges = geometries
+                            controller.scene_received = True
+                            if visual_objects != controller.workcell_objects:
+                                controller.workcell_objects = visual_objects
+                                controller.workcell_revision += 1
+                            controller.telemetry["objects"] = objects
+                            controller.telemetry['error'] = None
+                            last_scene = now
                 except Exception as error:
                     with controller.lock:
                         controller.telemetry["error"] = str(error)
@@ -110,8 +182,10 @@ def monitor(controller, stop):
             controller_future=pending_request(controller_future,controller_requested,now)
             if now-last_request >= .8:
                 if scene_future is None and scene.service_is_ready():
-                    scene_future = scene.call_async(GetPlanningScene.Request())
-                    scene_requested = now
+                    with controller.lock:
+                        scene_generation = controller.scene_generation
+                        scene_future = scene.call_async(GetPlanningScene.Request())
+                        scene_requested = now
                 if controller_future is None and controllers.service_is_ready():
                     controller_future = controllers.call_async(ListControllers.Request())
                     controller_requested = now
@@ -126,9 +200,6 @@ def monitor(controller, stop):
                         controller.telemetry["controller"] = False
                     if profile.real:
                         controller.telemetry['controller'] = trajectory.server_is_ready()
-                    if now-last_scene > 3:
-                        controller.object_edges = {}
-                        controller.telemetry["objects"] = []
                     controller.last_telemetry = now
                 last_request = now
     finally:
@@ -173,11 +244,39 @@ def make_handler(controller, static, token, port):
                     state = controller.status(since)
                     state["token"] = token
                     return self.respond(200, state)
+                if url.path == '/api/workcell':
+                    revision = int(parse_qs(url.query).get('revision', ['-1'])[0])
+                    with controller.lock:
+                        fresh = time.monotonic() - controller.last_telemetry <= 4
+                        live = fresh and controller.telemetry['moveit']
+                        pose = controller.telemetry['robot'] if fresh else {'available': False}
+                        data = dict(live=live, real=controller.profile.real, robot=pose,
+                                    revision=controller.workcell_revision,
+                                    animation=controller.animation_pose if fresh else None)
+                        if not pose['available']:
+                            data['last_pose'] = controller.last_workcell_pose
+                        if revision != controller.workcell_revision:
+                            data['objects'] = controller.workcell_objects
+                    return self.respond(200, data)
+                mesh = re.fullmatch(r'/workcell-mesh/(base_link|[1-6]|visual_(?:[0-9]|10))\.stl', url.path)
+                if mesh:
+                    name = mesh[1]
+                    if name.startswith('visual_'):
+                        path = static.parent/'meshes/torch'/f'{name}.stl'
+                    else:
+                        path = (Path(get_package_share_directory('jaka_description')) /
+                                'meshes/jaka_zu12_meshes'/f'{name}.STL')
+                    return self.respond(200, path.read_bytes(), 'model/stl')
                 if url.path.startswith("/api/report/"):
                     return self.respond(200, controller.report(url.path.rsplit("/", 1)[1]))
                 assets = {"/": ("index.html", "text/html; charset=utf-8"),
                           "/favicon.svg": ("favicon.svg", "image/svg+xml"),
                           "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                          "/workcell": ("workcell.html", "text/html; charset=utf-8"),
+                          "/workcell.js": ("workcell.js", "text/javascript; charset=utf-8"),
+                          "/workcell.css": ("workcell.css", "text/css; charset=utf-8"),
+                          **{f"/workcell-vendor/{name}": (f"workcell-vendor/{name}", "text/javascript; charset=utf-8")
+                             for name in ("three.module.js", "three.core.js", "OrbitControls.js", "RoomEnvironment.js")},
                           "/scan.js": ("scan.js", "text/javascript; charset=utf-8"),
                           "/style.css": ("style.css", "text/css; charset=utf-8")}
                 if url.path in assets:

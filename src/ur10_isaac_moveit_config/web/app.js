@@ -7,7 +7,7 @@ const faceLabel = (id) => faceNames[id] || `Грань ${id}`;
 const seamLabel = (id) => geometry?.seams?.find(s=>s.id===id)?.label || faceLabel(id);
 const robotName = () => state?.robot_profile?.real ? 'JAKA ZU12' : 'UR10';
 let selection='face', token='', lastSequence=0, state=null, geometry=null, geometryTimer=null, geometryVersion=0;
-let geometryLoading=false;
+let geometryLoading=false, pendingWorkpiece=null;
 let busy=false, polling=false, logLines=0, toastTimer=null, objectSignature='', serverConnected=false;
 let yaw=.75, pitch=.48, zoom=1, dragging=null, dragMoved=false;
 let sceneFraming=null, robotAvailable=false, lastRobotSignature='';
@@ -21,7 +21,7 @@ $('object').options[0].textContent='Модель детали';
 $('workpiece-shape').add(new Option('Текущая CAD-модель','cad'));
 function visibleSeams(){return (geometry?.seams||[]).filter(s=>$('seam-filter').value==='all'||s.normal[2]>.5);}
 function pickSeam(id){
-  if(isLocked())return;
+  if(isLocked()||!geometry?.seams?.some(seam=>seam.id===id))return;
   selection='face';$('face').value=id;
   for(const key of ['begin','begin-number'])$(key).value=0;
   for(const key of ['end','end-number'])$(key).value=100;
@@ -52,14 +52,17 @@ async function api(path,data){
   const result=await response.json();if(!response.ok)throw new Error(result.error||`Ошибка ${response.status}`);return result;
 }
 function readSettings(){
-  return {object:$('object').value,selection,face:$('face').value,edge:$('edge').value,
+  const face=$('face').value,edge=$('edge').value;
+  return {object:$('object').value,selection,
+    face:selection==='face'?face:face||defaults.face,
+    edge:selection==='edge'?edge:edge||defaults.edge,
     begin:Number($('begin-number').value)/100,end:Number($('end-number').value)/100,
     speed:Number($('speed').value)/1000,offset:Number($('offset').value)/1000,
     clearance:Number($('clearance').value)/1000,step:Number($('step').value)/1000,
     scaling:Number($('scaling').value)/100,roll:Number($('roll').value),orientation_mode:$('orientation-mode').value,
     tilt:Number($('tilt').value),tilt_direction:Number($('tilt-direction').value),max_tilt:Number($('max-tilt').value),orientation_timeout:Number($('orientation-timeout').value)};
 }
-function validSettings(){const s=readSettings();return $('settings-form').checkValidity()&&s.begin<s.end&&s.begin>=0&&s.end<=1&&s.tilt<=s.max_tilt;}
+function validSettings(){const s=readSettings();return Boolean(s[s.selection])&&$('settings-form').checkValidity()&&s.begin<s.end&&s.begin>=0&&s.end<=1&&s.tilt<=s.max_tilt;}
 function applySettings(settings){
   const s={...defaults,...settings};selection=s.selection==='edge'?'edge':'face';
   for(const key of ['face','edge']){
@@ -90,15 +93,33 @@ function changed(){
   if(geometry)draw();
   clearTimeout(geometryTimer);geometryTimer=setTimeout(refreshGeometry,130);updateControls();
 }
+function clearGeometry() {
+  geometry=null;sceneFraming=null;
+  $('scene-svg').replaceChildren();renderSeams();
+  $('model-source').textContent='Ожидаем заготовку из MoveIt';
+  $('scene-view-label').textContent='ОЖИДАНИЕ';
+}
 async function refreshGeometry(){
-  if(!token||!validSettings())return;
+  if(!token)return;
   if(geometryLoading)return;
   geometryLoading=true;
-  const requested=readSettings(),requestKey=JSON.stringify(requested),requestSignature=objectSignature;
+  const settings=readSettings(),requestKey=JSON.stringify(settings),requestSignature=objectSignature;
+  const requested={...(validSettings()?settings:defaults),object:settings.object,selection:settings.selection,
+                   face:settings.face||defaults.face,edge:settings.edge||defaults.edge};
   const version=++geometryVersion;
-  try{const result=await api('/api/geometry',requested);if(version!==geometryVersion||JSON.stringify(readSettings())!==requestKey)return;
+  try{const result=await api('/api/geometry',requested);
+      if(version!==geometryVersion||JSON.stringify(readSettings())!==requestKey)return;
+      if(pendingWorkpiece&&(result.scene_generation??-1)<pendingWorkpiece.scene_generation)return;
+      if(result.source==='awaiting_scene'){clearGeometry();return;}
+      if(pendingWorkpiece&&result.source!=='moveit')return;
+      pendingWorkpiece=null;
       const oldShape=geometry?JSON.stringify(geometry.faces.map(f=>f.vertices)):null;
-      geometry=result;if(oldShape!==JSON.stringify(result.faces.map(f=>f.vertices)))sceneFraming=null;
+      geometry=result;
+      if(!result.edges.length&&selection==='edge'){
+        selection='face';$('face').hidden=false;$('edge').hidden=true;
+        $('mode-face').classList.add('selected');$('mode-edge').classList.remove('selected');
+      }
+      if(oldShape!==JSON.stringify(result.faces.map(f=>f.vertices)))sceneFraming=null;
       if(oldShape===null&&result.shape==='mesh'){focusWorkpiece=true;$('show-robot').checked=false;}
       const options=(id,items,value)=>{$(id).replaceChildren(...items.map(([key,label])=>Object.assign(document.createElement('option'),{value:key,textContent:label})));$(id).value=value;};
       options('face',(result.seams||result.faces).map(f=>[f.id,f.label||faceLabel(f.id)]),result.selected_face||readSettings().face);
@@ -107,18 +128,18 @@ async function refreshGeometry(){
       hoverSeam=null;renderSeams();
       $('object-shape').textContent=result.shape.toUpperCase();
       if(result.shape==='mesh'){
-        $('workpiece-shape').value='cad';
-        const option=$('object').selectedOptions[0];if(option)option.textContent=result.part_name||'Деталь · CAD';
+        const label=(state?.workpiece_catalog||[]).find(model=>model.shape===result.preset)?.label;
+        const option=$('object').selectedOptions[0];if(option)option.textContent=label||result.part_name||'Деталь · CAD';
       }
       const mm=Math.round(result.length*1000).toLocaleString('ru-RU');
     $('path-length').replaceChildren(document.createTextNode(mm+' '),Object.assign(document.createElement('span'),{textContent:'мм'}));
     $('range-summary').textContent=`${Math.round((readSettings().end-readSettings().begin)*100)}% ${selection==='face'?'периметра':'ребра'} · ${mm} мм`;
-    $('model-source').textContent=result.source==='cached_cad'?`${result.part_name} · сохранённая CAD, ожидаем MoveIt`:result.demo?'Образец · сцена ещё не подключена':'Геометрия из сцены MoveIt';
+    $('model-source').textContent=result.source==='last_moveit'?'Последняя геометрия MoveIt · ожидание обновления':result.source==='cached_cad'?`${result.part_name} · сохранённая CAD, ожидаем MoveIt`:result.demo?'Образец · сцена ещё не подключена':'Геометрия из сцены MoveIt';
     $('scene-view-label').textContent=result.demo?'ОБРАЗЕЦ':'LIVE GEOMETRY';draw();
   }catch(error){notify(error.message,true);}
   finally{
-    geometryLoading=false;
-    if(JSON.stringify(readSettings())!==requestKey||objectSignature!==requestSignature){clearTimeout(geometryTimer);geometryTimer=setTimeout(refreshGeometry,0);}
+    geometryLoading=false;updateControls();
+    if(version!==geometryVersion||JSON.stringify(readSettings())!==requestKey||objectSignature!==requestSignature){clearTimeout(geometryTimer);geometryTimer=setTimeout(refreshGeometry,0);}
   }
 }
 function svg(tag,attrs={},parent){const node=document.createElementNS(SVG_NS,tag);for(const [key,value]of Object.entries(attrs))node.setAttribute(key,String(value));if(parent)parent.append(node);return node;}
@@ -170,10 +191,11 @@ function draw(){
     const shade=.45+.4*Math.max(0,face.normal.reduce((v,n,i)=>v+n*light[i],0));
     const fill=selected?`rgb(${Math.round(160*shade+30)},${Math.round(104*shade+22)},${Math.round(58*shade+14)})`:`rgb(${Math.round(52*shade+26)},${Math.round(70*shade+30)},${Math.round(94*shade+34)})`;
     const path=(face.loops||[face.vertices]).map(loop=>'M '+loop.map(projectString).join(' L ')+' Z').join(' ');
-    const polygon=svg('path',{d:path,'fill-rule':'evenodd',fill,stroke:selected?'#d49b65':'#6b829b','stroke-width':selected?'1.5':'1','stroke-linejoin':'round',tabindex:selection==='face'?'0':'-1',role:'button','aria-label':seamLabel(face.id)},root);
-    const pick=()=>{if(dragMoved||isLocked()||selection!=='face')return;pickSeam(face.id);};
+    const selectable=selection==='face'&&geometry.seams.some(seam=>seam.id===face.id);
+    const polygon=svg('path',{d:path,'fill-rule':'evenodd',fill,stroke:selected?'#d49b65':'#6b829b','stroke-width':selected?'1.5':'1','stroke-linejoin':'round',...(selectable?{tabindex:'0',role:'button','aria-label':seamLabel(face.id)}:{})},root);
+    const pick=()=>{if(!selectable||dragMoved||isLocked())return;pickSeam(face.id);};
     polygon.addEventListener('click',pick);polygon.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick();}});
-    svg('title',{},polygon).textContent=faceLabel(face.id);
+    svg('title',{},polygon).textContent=seamLabel(face.id);
     }});
   }
   if(showRobot){
@@ -226,9 +248,17 @@ function draw(){
   }
   svg('polyline',{points:geometry.seam.map(projectString).join(' '),fill:'none',stroke:'#ffc58a','stroke-width':'3','stroke-linecap':'round','stroke-linejoin':'round','pointer-events':'none'},root);
   svg('polyline',{points:geometry.tool.map(projectString).join(' '),fill:'none',stroke:'#79e5c5','stroke-width':'2.5','stroke-dasharray':'7 5','stroke-linejoin':'round','pointer-events':'none'},root);
+  for(const contact of geometry.probe_contacts||[]){
+    const [x,y]=projectString(contact.position_m).split(',').map(Number);
+    const dot=svg('circle',{cx:x,cy:y,r:4,fill:'#ffd766',stroke:'#24384b'},root);
+    svg('title',{},dot).textContent='Прощупывание по модели '+contact.station+contact.side;
+    svg('text',{x:x+6,y:y-6,fill:'#ffd766','font-size':11,'pointer-events':'none'},root).textContent=contact.station+contact.side;
+  }
+  if(geometry.tool.length){
   const first=project(geometry.tool[0]);svg('circle',{cx:first[0],cy:first[1],r:5,fill:'#76e6c2',stroke:'#143d34','stroke-width':'3','pointer-events':'none'},root);
   const end=project(geometry.tool[geometry.tool.length-1]);svg('circle',{cx:end[0],cy:end[1],r:3,fill:'#d4ffee','pointer-events':'none'},root);
   const firstLabel=svg('text',{x:first[0]+12,y:first[1]-10,fill:'#95c7ba','font-size':'10','font-family':'Segoe UI, sans-serif','pointer-events':'none'},root);firstLabel.textContent='СТАРТ';
+  }
   const caption=svg('text',{x:400,y:502,fill:'#647f98','font-size':'10','text-anchor':'middle','font-family':'Segoe UI, sans-serif','letter-spacing':'1','pointer-events':'none'},root);
   caption.textContent=`${size.map(v=>Math.round(v*1000)).join(' × ')} ММ`;
   const origin=svg('text',{x:400,y:523,fill:'#425d76','font-size':'9','text-anchor':'middle','font-family':'Consolas, monospace','pointer-events':'none'},root);
@@ -245,23 +275,35 @@ function updateControls(){
   $('robot-tip').textContent=`6 осей · ${state?.robot_profile?.tip||'tool0'}`;
   $('source-name').textContent=real?'JAKA SDK':'Isaac Sim';
   $('controller-name').textContent=`Контроллер ${robotName()}`;
-  $('return-note').textContent=real?'После прохода — подъём на 25 см с сохранением ориентации.':'После прохода — возврат в сохранённую позу.';
-  const canPreview=serverConnected&&h.moveit&&objectReady&&!isLocked()&&!busy&&validSettings();
+  const marginMm = Math.round((geometry?.vertical_clearance_m ?? state?.robot_profile?.vertical_clearance_m ?? 0) * 1000);
+  $('return-note').textContent = real
+    ? `Подъём над столом: +${marginMm} мм для прохода и прощупывания. После прохода — подъём на 25 см.`
+    : 'После прохода — возврат в сохранённую позу.';
+  const canPreview=serverConnected&&h.moveit&&objectReady&&geometry?.source==='moveit'&&geometry.object_id===$('object').value&&
+    geometry.scene_generation===state.scene.generation&&geometry.tool.length>0&&!pendingWorkpiece&&!isLocked()&&!busy&&validSettings();
   $('preview').disabled=!canPreview;$('plan').disabled=!(canPreview&&h.isaac&&h.feedback);$('execute').disabled=!(canPreview&&h.isaac&&h.feedback&&h.controller);
   $('stop').disabled=!isRunning()||Boolean(state?.job?.stopping)||busy;
   $('scene-start').disabled=real||busy||Boolean(state?.scene?.owned)||Boolean(h.moveit);
-  $('scene-start').textContent=real?'JAKA: отдельный запуск run_real.sh':state?.scene?.owned?(h.moveit?'Сцена запущена':'Запуск сцены…'):h.moveit?'Подключено к сцене':'＋ Запустить сцену с кубом';
+  $('scene-start').textContent=real?'JAKA: отдельный запуск run_real.sh':state?.scene?.owned?(h.moveit?'Сцена запущена':'Запуск сцены…'):h.moveit?'Подключено к сцене':'＋ Запустить сцену';
   $('scene-stop').hidden=!state?.scene?.owned;$('scene-stop').disabled=isRunning()||busy||state?.scene?.stopping;
   for(const element of $('settings-form').querySelectorAll('input,select,button'))element.disabled=isLocked();
-  $('workpiece-shape').disabled=$('workpiece-apply').disabled=!serverConnected||!h.moveit||isLocked()||busy;
+  $('workpiece-shape').disabled=$('workpiece-apply').disabled=!serverConnected||!h.moveit||isLocked()||busy||Boolean(pendingWorkpiece);
   $('workpiece-apply').textContent=busy?'Подождите…':'Применить в RViz';
+  const picker=$('workpiece-shape');
+  for(const model of state?.workpiece_catalog||[]){
+    if(![...picker.options].some(option=>option.value===model.shape)){
+      picker.add(new Option(model.label,model.shape));
+    }
+  }
   const currentObject=(h.objects||[]).find(o=>o.id===$('object').value);
-  if(currentObject&&!busy&&currentObject.shape){
-    $('workpiece-shape').value=currentObject.shape==='mesh'?'cad':currentObject.shape;
+  if(pendingWorkpiece){picker.value=pendingWorkpiece.shape;}
+  else if(currentObject&&!busy&&currentObject.shape){
+    picker.value=currentObject.preset||(currentObject.shape==='mesh'?'cad':currentObject.shape);
     $('object-shape').textContent=currentObject.shape.toUpperCase();
   }
   if($('workpiece-shape').value==='cad')$('workpiece-apply').disabled=true;
   if($('workpiece-shape').value==='cad')$('workpiece-hint').textContent='Используется текущая модель детали в MoveIt/RViz. Выберите шов на модели или в списке ниже.';
+  $('mode-edge').hidden=geometry?.shape==='mesh';
   $('reset').disabled=isLocked();
   const healthy=[h.isaac&&h.feedback,h.moveit,h.controller,objectReady];
   for(const [i,name]of ['isaac','moveit','controller','object'].entries()){$('health-'+name).textContent=healthy[i]?'✓':'○';$('health-'+name).classList.toggle('good',Boolean(healthy[i]));$('dot-'+name).classList.toggle('good',Boolean(healthy[i]));}
@@ -302,7 +344,7 @@ async function poll(){
     const robotSignature=JSON.stringify(data.health.robot||null);
     if(robotSignature!==lastRobotSignature){lastRobotSignature=robotSignature;if(geometry)draw();}
     addLogs(data.logs);lastSequence=data.sequence;
-    const sig=JSON.stringify(data.health.objects);
+    const sig=JSON.stringify([data.scene.generation,data.health.moveit,data.health.objects]);
     if(sig!==objectSignature||!geometry){objectSignature=sig;const previous=$('object').value;const objects=data.health.objects;
       if(objects.length){$('object').replaceChildren(...objects.map(o=>{const option=document.createElement('option');option.value=o.id;option.textContent=`${o.id} · ${{box:'Параллелепипед',cylinder:'Цилиндр',mesh:'Mesh'}[o.shape]||'BOX'}${o.dimensions.length?' · '+o.dimensions.map(v=>Math.round(v*1000)).join(' × ')+' мм':''}`;return option;}));if(objects.some(o=>o.id===previous))$('object').value=previous;}
       $('object-id').textContent=$('object').value;refreshGeometry();}
@@ -324,14 +366,14 @@ async function applyWorkpiece(){
   busy=true;updateControls();
   $('workpiece-hint').textContent='Обновляем заготовку в сцене MoveIt/RViz…';
   try{
-    await api('/api/workpiece',{object,shape});
-    geometry=null;objectSignature=null;sceneFraming=null;
+    pendingWorkpiece=await api('/api/workpiece',{object,shape});
+    ++geometryVersion;objectSignature=null;clearGeometry();
     await poll();
     notify('Заготовка заменена в RViz. Выберите грань или ребро.');
   }catch(error){notify(error.message,true);}
   finally{
     busy=false;
-    $('workpiece-hint').textContent='Выбор формы заменяет текущую деталь в MoveIt/RViz. Центр: X −1 · Y 0 · Z 0,1 м.';
+    $('workpiece-hint').textContent='Выбор детали заменяет её модель в MoveIt/RViz.';
     updateControls();
   }
 }

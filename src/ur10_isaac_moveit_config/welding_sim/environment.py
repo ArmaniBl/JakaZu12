@@ -15,15 +15,15 @@ def simulation_floor(top=0.):
     return obj
 
 
-def allow_base_support(matrix):
+def allow_base_support(matrix, base_link='base_link_inertia'):
     """Only the stationary mounting base may touch the supporting floor."""
     result=deepcopy(matrix)
-    for name in ('floor','base_link_inertia'):
+    for name in ('floor',base_link):
         if name not in result.entry_names:
             result.entry_names.append(name)
             for row in result.entry_values:row.enabled.append(False)
             result.entry_values.append(AllowedCollisionEntry(enabled=[False]*len(result.entry_names)))
-    a,b=(result.entry_names.index(name) for name in ('floor','base_link_inertia'))
+    a,b=(result.entry_names.index(name) for name in ('floor',base_link))
     result.entry_values[a].enabled[b]=True
     result.entry_values[b].enabled[a]=True
     return result

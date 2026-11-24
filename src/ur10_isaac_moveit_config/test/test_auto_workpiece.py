@@ -62,7 +62,7 @@ class AutoWorkpieceTests(unittest.TestCase):
 
     def test_next_startup_selection_does_not_replace_another_live_model(self):
         model=json.loads((MODEL.parent/'workpiece_models/05-wave-butt.json').read_text())
-        old=json.loads((MODEL.parent/'workpiece_models/slotted-88x40x5.json').read_text())
+        old=json.loads((Path(__file__).resolve().parent/'fixtures/slotted-88x40x5.json').read_text())
         path=self.workspace/'src/jaka_zu12_moveit_config/config/workpiece_model.json'
         path.write_text(json.dumps(model))
         self.node.scene.world.collision_objects[1]=preview_object(old)
@@ -119,6 +119,14 @@ class AutoWorkpieceTests(unittest.TestCase):
                 call=lambda *args:NS(scene=self.node.scene))
         with self.assertRaisesRegex(RuntimeError,'not a validated robot registration'):
             WeldingRunner.read_object(fake)
+
+    def test_real_execution_requires_collision_table(self):
+        self.node.scene.world.collision_objects.pop(0)
+        fake = NS(args=NS(object='welding_workpiece', mode='execute', use_scene_workpiece=True),
+                  profile=JAKA, call=lambda *args: NS(scene=self.node.scene))
+        with patch('welding_sim.runner.time.monotonic', side_effect=[0., 21.]):
+            with self.assertRaisesRegex(RuntimeError, 'Collision table is absent'):
+                WeldingRunner.read_object(fake)
 
     def test_operator_scene_mode_uses_current_geometry_without_scan_receipt(self):
         fake=NS(args=NS(object='welding_workpiece',mode='execute',use_scene_workpiece=True),profile=JAKA,

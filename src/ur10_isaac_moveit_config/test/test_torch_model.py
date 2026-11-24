@@ -50,15 +50,19 @@ class TorchModelTests(unittest.TestCase):
             semantic=ET.parse(config/srdf_name).getroot()
             self.assertEqual(semantic.find(f"group[@name='{group}']/chain").get('tip_link'),'welding_tcp')
 
-    def test_working_tcp_is_physical_contact_end(self):
+    def test_asset_and_calibrated_tcp_are_independent(self):
         data=json.loads((self.package/'config/torch_geometry.json').read_text())
-        self.assertEqual(data['tcp_definition'],'center of forward CopperContactTip face')
-        self.assertAlmostEqual(data['contact_extension_from_nozzle_m'],.001,places=6)
+        self.assertEqual(data['source'], 'JTM_RevC_MB_EVO36_0140528_exposed_tip_50mm.usd')
+        self.assertTrue((self.package/'assets'/data['source']).is_file())
+        self.assertEqual(data['tcp_definition'], 'preserved calibrated TCP')
+        self.assertEqual(data['source'],
+                         json.loads((self.package/'config/torch_collision.json').read_text())['source'])
         urdf=self.expand('ur10.urdf.xacro',True)
         origin=urdf.find("joint[@name='torch_tcp_joint']/origin")
         xyz=list(map(float,origin.get('xyz').split()))
         self.assertAlmostEqual(xyz[1],.229114062985,places=10)
         self.assertAlmostEqual(xyz[2],.101956156188,places=10)
+        self.assertEqual(origin.attrib, data['tcp_origin'])
 
     def test_inertial_properties_match_simulation_estimate(self):
         data=json.loads((self.package/'config/torch_dynamics.json').read_text())

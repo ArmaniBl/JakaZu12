@@ -92,7 +92,7 @@ while True: time.sleep(.1)
                 self.assertEqual(post(f'http://127.0.0.1:{port}', '')[0], 403)
                 code, payload = post(f'http://127.0.0.1:{port}', 'test-token')
                 self.assertEqual(code, 200)
-                self.assertTrue(payload['demo'])
+                self.assertEqual(payload['source'], 'awaiting_scene')
             finally:
                 client.close()
                 server.shutdown()

@@ -53,10 +53,24 @@ def generate_launch_description():
                 description="JAKA joint-servo LPF cutoff in Hz",
             ),
             DeclareLaunchArgument(
+                "configure_payload",
+                default_value="true",
+                choices=["true", "false"],
+                description="Write the supplied payload; false preserves the controller payload",
+            ),
+            DeclareLaunchArgument(
                 "payload_mass_kg",
-                default_value="0.0",
+                default_value="3.0",
                 description="External tool payload mass in kg",
             ),
+            *[
+                DeclareLaunchArgument(
+                    f"payload_centroid_{axis}_mm",
+                    default_value="200.0" if axis == "z" else "0.0",
+                    description=f"Tool centre of mass, flange {axis.upper()} coordinate in mm",
+                )
+                for axis in "xyz"
+            ],
             DeclareLaunchArgument(
                 "joint_states_topic",
                 default_value="/joint_states",
@@ -98,13 +112,16 @@ def generate_launch_description():
                                 "servo_lpf_cutoff_hz": ParameterValue(
                                     servo_lpf_cutoff_hz, value_type=float
                                 ),
-                                "configure_payload": True,
+                                "configure_payload": ParameterValue(LaunchConfiguration("configure_payload"), value_type=bool),
                                 "payload_mass_kg": ParameterValue(
                                     payload_mass_kg, value_type=float
                                 ),
-                                "payload_centroid_x_mm": 0.0,
-                                "payload_centroid_y_mm": 0.0,
-                                "payload_centroid_z_mm": 0.0,
+                                **{
+                                    f"payload_centroid_{axis}_mm": ParameterValue(
+                                        LaunchConfiguration(f"payload_centroid_{axis}_mm"), value_type=float
+                                    )
+                                    for axis in "xyz"
+                                },
                             }
                         ],
                     ),

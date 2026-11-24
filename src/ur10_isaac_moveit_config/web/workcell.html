@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Рабочая зона · JAKA</title>
+  <link rel="stylesheet" href="/workcell.css">
+  <script type="module" src="/workcell.js"></script>
+</head>
+<body>
+  <header>
+    <div><a href="/">Панель сварки</a><h1>Рабочая зона</h1></div>
+    <nav aria-label="Камера"><button id="fit" type="button">Общий вид</button><button id="top" type="button">Сверху</button></nav>
+  </header>
+  <main id="viewport" aria-label="Трёхмерная модель рабочей зоны"></main>
+  <footer>
+    <span>Робот <output id="robot-state">Ожидаем данные</output></span>
+    <span>Сцена <output id="scene-state">Ожидаем MoveIt</output></span>
+    <span class="legend">Тёмный перфорированный стол · Медная деталь</span>
+  </footer>
+</body>
+</html>

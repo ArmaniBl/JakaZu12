@@ -73,11 +73,11 @@ SDK-настройки нагрузки физического JAKA оставл
 
 ```bash
 diagnostics/usd_env/bin/python isaac/configure_torch_dynamics.py \
-  --source /mnt/c/Users/user/Desktop/ur10/JTM_RevC_MB_EVO36_0140528.usd \
+  --source src/ur10_isaac_moveit_config/assets/JTM_RevC_MB_EVO36_0140528_exposed_tip_50mm.usd \
   --scene /mnt/c/Users/user/Desktop/ur10/ur_welding_torch.usda
 
 diagnostics/usd_env/bin/python isaac/configure_torch_collision.py \
-  --source /mnt/c/Users/user/Desktop/ur10/JTM_RevC_MB_EVO36_0140528.usd \
+  --source src/ur10_isaac_moveit_config/assets/JTM_RevC_MB_EVO36_0140528_exposed_tip_50mm.usd \
   --scene /mnt/c/Users/user/Desktop/ur10/ur_welding_torch.usda
 
 ./build.sh --real

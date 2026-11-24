@@ -103,10 +103,15 @@ class GeometryTests(unittest.TestCase):
             result = GetPositionFK.Response()
             result.error_code.val = 1
             pose = PoseStamped()
-            pose.pose.position.x = request.robot_state.joint_state.position[0]*0.04
+            position = request.robot_state.joint_state.position[0]
+            pose.pose.position.x = position * 0.04
+            pose.pose.position.z = .016 + position * .002
             result.pose_stamped = [pose]
             return result
         stub = SimpleNamespace(args=SimpleNamespace(speed=0.02), report={}, call=fk)
+        with self.assertRaisesRegex(RuntimeError, 'height deviates by 2.00 mm'):
+            WeldingRunner.limit_cartesian_speed(stub, RobotState(), trajectory, level_z=.016)
+        self.assertAlmostEqual(stub.report['level_pass_fk']['max_z_m'], .018)
         WeldingRunner.limit_cartesian_speed(stub, RobotState(), trajectory)
         last = trajectory.joint_trajectory.points[-1]
         duration = last.time_from_start.sec + last.time_from_start.nanosec/1e9

@@ -13,6 +13,8 @@ from moveit_msgs.srv import ApplyPlanningScene
 from rclpy.node import Node
 from shape_msgs.msg import SolidPrimitive, Mesh, MeshTriangle
 from welding_sim.runner import object_geometry
+from welding_sim.workpiece_model import preview_object, WORKPIECE_CATALOG, CATALOG_PREFIX
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from visualization_msgs.msg import Marker, MarkerArray
 from rclpy.qos import DurabilityPolicy, QoSProfile
 
@@ -23,14 +25,16 @@ def main():
     parser.add_argument('--dimensions', type=float, nargs='+', default=[.3, .3, .2],
                         help='Box: x y z; cylinder: height radius (meters)')
     parser.add_argument('--mesh-json', help='JSON with vertices [[x,y,z],...] and triangles [[i,j,k],...]')
+    parser.add_argument('--catalog-model', choices=[entry[0] for entry in WORKPIECE_CATALOG])
+    parser.add_argument('--require-jaka-idle', action='store_true')
     parser.add_argument('--center', type=float, nargs=3, default=[-1., 0., .1])
     parser.add_argument('--quaternion', type=float, nargs=4, default=[0., 0., 0., 1.])
     parser.add_argument('--frame', default='world')
     parser.add_argument('--id', default='welding_workpiece')
     parser.add_argument('--clear-markers', action='store_true', help='Clear obsolete welding preview in RViz')
     args = parser.parse_args(rclpy.utilities.remove_ros_args(sys.argv)[1:])
-    if args.id == "floor":
-        parser.error("floor is reserved for the collision floor")
+    if args.id == "floor" or args.id.startswith('workspace_'):
+        parser.error("Object ID is reserved for a collision obstacle")
     if not all(math.isfinite(v) for v in args.center+args.quaternion):
         parser.error('Pose must be finite')
     pose = Pose()
@@ -43,7 +47,21 @@ def main():
     workpiece.pose.orientation.w = 1.
     workpiece.header.frame_id = args.frame
     try:
-        if args.shape == 'mesh':
+        if args.catalog_model:
+            try:
+                package = Path(get_package_share_directory('jaka_zu12_moveit_config'))
+            except PackageNotFoundError:
+                package = Path(__file__).resolve().parents[2] / 'jaka_zu12_moveit_config'
+            directory = package / 'config/workpiece_models'
+            model = json.loads((directory / f'{args.catalog_model}.json').read_text(encoding='utf-8'))
+            # CAD coordinates are in mm, with the base of the part at local Z=0.
+            model['initial_pose'] = dict(position_m=args.center, quaternion_xyzw=[
+                pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w])
+            workpiece = preview_object(model)
+            workpiece.id = args.id
+            workpiece.header.frame_id = args.frame
+            workpiece.type.key = CATALOG_PREFIX + args.catalog_model
+        elif args.shape == 'mesh':
             if not args.mesh_json:
                 parser.error('--shape mesh requires --mesh-json')
             data = json.loads(Path(args.mesh_json).read_text(encoding='utf-8'))
@@ -60,7 +78,11 @@ def main():
     except (ValueError, KeyError, TypeError, OSError) as error:
         parser.error(str(error))
     rclpy.init()
-    node = Node("welding_workpiece_loader")
+    if args.require_jaka_idle:
+        from rangevision import Bridge
+        node = Bridge('welding_workpiece_loader')
+    else:
+        node = Node("welding_workpiece_loader")
     try:
         marker_publisher = (node.create_publisher(MarkerArray, '/welding/markers',
                             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
@@ -81,13 +103,19 @@ def main():
         request.scene.robot_state.is_diff = True
         request.scene.world.collision_objects = [workpiece]
         request.scene.object_colors = [color]
+        if args.require_jaka_idle:
+            try:
+                node.require_idle()
+            except ValueError as error:
+                node.get_logger().error(str(error))
+                return 1
         future = client.call_async(request)
         rclpy.spin_until_future_complete(node, future, timeout_sec=15.0)
         if not future.done() or not future.result().success:
             node.get_logger().error("MoveIt did not accept the welding workpiece")
             return 1
         node.get_logger().info(
-            f"Added {args.id}: {args.shape}, center {args.center} m in {args.frame}"
+            f"Added {args.id}: {args.catalog_model or args.shape}, center {args.center} m in {args.frame}"
         )
         if marker_publisher:
             marker_publisher.publish(MarkerArray(markers=[Marker(action=Marker.DELETEALL)]))

@@ -14,12 +14,14 @@ import threading
 import time
 import uuid
 
-from .geometry import FACES, box_edges, face_contour, select_edges
+import numpy as np
+
+from .geometry import FACES, face_contour, select_edges
 from .geometry import WorkpieceGeometry
 from .profiles import ISAAC
 from .orientation import tilted_orientation
-from .workpiece_model import preview_object
-from ament_index_python.packages import get_package_share_directory
+from .table_limits import JAKA_TABLE_TOP_M
+from .workpiece_model import preview_object, WORKPIECE_CATALOG, CATALOG_PREFIX
 
 
 @dataclass(frozen=True)
@@ -96,19 +98,44 @@ class Settings:
         return args
 
 
-def geometry_payload(edges, settings, demo=False):
+def weld_contours(geometry):
+    if geometry.selectable_seams:
+        return geometry.selectable_seams
+    if geometry.shape != 'mesh':
+        return tuple(geometry.contours)
+    significant = []
+    for name, contour in geometry.contours.items():
+        length = contour.length
+        if length < .018:
+            continue
+        vertices = contour.vertices[:-1] - contour.vertices[0]
+        area = abs(np.cross(vertices, np.roll(vertices, -1, axis=0)).sum(axis=0) @ contour.outward) / 2
+        # Area divided by perimeter distinguishes full loops from long, narrow
+        # facets on tessellated cylinders. Units are meters.
+        if area >= 25e-6 and area / length >= .0012:
+            significant.append(name)
+    return tuple(significant)
+
+
+def geometry_payload(edges, settings, demo=False, *, profile=ISAAC):
+    from .probing import probe_contacts
     geometry = edges if isinstance(edges, WorkpieceGeometry) else WorkpieceGeometry(
         'box', edges, {f: face_contour(edges, f) for f in FACES})
-    edges = geometry.edges
+    edges = geometry.edges if geometry.shape != 'mesh' else []
     faces = [(name,c) for name,c in geometry.contours.items() if c.kind not in ('hole','weld')]
-    choices=geometry.selectable_seams or tuple(geometry.contours)
-    face = settings.face if settings.face in choices else max(choices,
+    choices = weld_contours(geometry)
+    face = settings.face if settings.face in choices else max(choices, default=None,
         key=lambda name:(float(geometry.contours[name].outward[2]),geometry.contours[name].kind!='hole',geometry.contours[name].length))
-    edge = settings.edge if settings.edge in {e.id for e in edges} else edges[0].id
-    selected = geometry.contour(face) if settings.selection == 'face' else geometry.select([edge])[0]
-    seam, tool, orientation = selected.path(settings.begin, settings.end, settings.offset,
-                                           settings.step, math.radians(settings.roll))
-    orientation=tilted_orientation(orientation,settings.tilt,settings.tilt_direction)
+    edge = settings.edge if settings.edge in {e.id for e in edges} else edges[0].id if edges else None
+    selected = geometry.select([edge])[0] if settings.selection == 'edge' and edge else (
+        geometry.contour(face) if face else None)
+    seam, tool, orientation = [], [], []
+    vertical_clearance_m = profile.path_vertical_clearance(selected)
+    if selected is not None:
+        seam, tool, orientation = selected.path(settings.begin, settings.end, settings.offset,
+                                               settings.step, math.radians(settings.roll))
+        seam, tool = seam.tolist(), (tool + (0., 0., vertical_clearance_m)).tolist()
+        orientation = tilted_orientation(orientation, settings.tilt, settings.tilt_direction).tolist()
     return {"demo": demo, "shape": geometry.shape, 'selected_face': face, 'selected_edge': edge,
             "faces": [{"id": name, "vertices": c.vertices[:-1].tolist(),
                        "loops": [v[:-1].tolist() for v in c.loops] if c.loops is not None else [c.vertices[:-1].tolist()],
@@ -117,13 +144,15 @@ def geometry_payload(edges, settings, demo=False):
                        "face_id": c.face_id or name,"vertices": c.vertices.tolist(),
                        "normal": c.outward.tolist(),"length_m": c.length}
                        for name,c in geometry.contours.items() if name in choices],
-            "selected_surface": geometry.contours[face].face_id or face,
+            "selected_surface": (geometry.contours[face].face_id or face) if face else None,
             "edges": [{"id": e.id, "faces": e.faces, "start": e.start.tolist(),
                        "end": e.end.tolist(), "length": e.length,
                        'vertices': (e.vertices.tolist() if hasattr(e, 'vertices') else [e.start.tolist(), e.end.tolist()])} for e in edges],
-            "seam": seam.tolist(), "tool": tool.tolist(), "orientation": orientation.tolist(),
-            "normal": selected.outward.tolist(),
-            "length": selected.length*(settings.end-settings.begin)}
+            "probe_contacts": probe_contacts(geometry, selected, seam) if selected is not None else [],
+            "seam": seam, "tool": tool, "orientation": orientation,
+            "vertical_clearance_m": vertical_clearance_m,
+            "normal": selected.outward.tolist() if selected is not None else [],
+            "length": selected.length*(settings.end-settings.begin) if selected is not None else 0.}
 
 
 class Controller:
@@ -147,6 +176,12 @@ class Controller:
                           "robot": {"available": False, "frame": "world", "points": [],
                                     "reason": "Ожидаем состояние робота"}}
         self.object_edges = {}
+        self.scene_received = False
+        self.scene_generation = 0
+        self.workcell_objects = []
+        self.workcell_revision = 0
+        self.animation_pose = None
+        self.last_workcell_pose = None
         self.last_telemetry = 0.0
         self.report_root = self.workspace / "diagnostics" / "web"
         self.report_root.mkdir(parents=True, exist_ok=True)
@@ -160,23 +195,35 @@ class Controller:
         with self.lock:
             health = dict(self.telemetry)
             if time.monotonic()-self.last_telemetry > 4:
-                health.update(isaac=False, feedback=False, moveit=False, controller=False, objects=[])
+                health.update(isaac=False, feedback=False, moveit=False, controller=False)
                 health["robot"] = {"available": False, "frame": "world", "points": [],
                                    "reason": "Нет актуальной связи с ROS"}
             from .scan_timestamp import latest_update
             return {"health": health, 'robot_profile': self.profile.payload(), "job": dict(self.job) if self.job else None,
+                    'workpiece_catalog': [{'shape': CATALOG_PREFIX + key, 'label': f'{name} · {size}'}
+                                          for key, name, size in WORKPIECE_CATALOG],
                     "scan_updated_unix": latest_update(self.workspace),
                     "scan_progress": dict(self.scan_progress),
                     "history": [dict(job) for job in reversed(self.jobs[-12:])],
                     "scene": {"owned": bool(self.scene_process and self.scene_process.poll() is None),
-                              "stopping": self.scene_stopping},
+                              "stopping": self.scene_stopping, "generation": self.scene_generation},
                     "logs": [entry for entry in self.logs if entry["seq"] > since], "sequence": self.sequence}
 
     def geometry(self, settings):
         with self.lock:
             live = self.object_edges.get(settings.object)
-            edges = live or box_edges([.3, .3, .2], [-1, 0, .1])
-        if live is None and self.profile.real and settings.object=='welding_workpiece':
+            generation = self.scene_generation
+            preset = next((o.get('preset') for o in self.telemetry['objects'] if o['id'] == settings.object), None)
+            scene_received = self.scene_received or generation > 0
+            current = self.telemetry['moveit'] and time.monotonic() - self.last_telemetry <= 4
+        if live is not None:
+            result = geometry_payload(live, settings, profile=self.profile)
+            result.update(source='moveit' if current else 'last_moveit', scene_generation=generation,
+                          object_id=settings.object, preset=preset)
+            return result
+        if scene_received:
+            return {'source': 'awaiting_scene', 'scene_generation': generation}
+        if settings.object == 'welding_workpiece':
             path=self.workspace/'src/jaka_zu12_moveit_config/config/workpiece_model.json'
             if path.is_file():
                 from .runner import object_geometry
@@ -184,14 +231,17 @@ class Controller:
                 cached=getattr(self,'cached_cad_geometry',None)
                 if cached is None or cached[0]!=stamp:
                     model=json.loads(path.read_text())
-                    edges=object_geometry(preview_object(model),self.profile.frame)
+                    preview = preview_object(model)
+                    if self.profile.real:
+                        preview.pose.position.z += JAKA_TABLE_TOP_M
+                    edges = object_geometry(preview, self.profile.frame)
                     self.cached_cad_geometry=(stamp,model,edges)
                 else:
                     _,model,edges=cached
-                result=geometry_payload(edges,settings,demo=True)
+                result=geometry_payload(edges, settings, demo=True, profile=self.profile)
                 result.update(source='cached_cad',part_name=model['part_name'])
                 return result
-        return geometry_payload(edges, settings, demo=live is None)
+        return {'source': 'awaiting_scene', 'scene_generation': generation}
 
     def _read(self, process, source, job=None):
         for line in process.stdout:
@@ -205,6 +255,11 @@ class Controller:
                         job["phase"] = "Планирование маршрута"
                     elif "Preview published" in text:
                         job["phase"] = "Предпросмотр в RViz"
+                    elif "Executing " in text and ":probe:" in text:
+                        point, motion = text.split(':probe:', 1)[1].split(':', 1)
+                        action = {'approach': 'подвод', 'contact': 'касание по CAD',
+                                  'standoff': 'контрольная точка с зазором', 'retract': 'отвод'}.get(motion)
+                        job['phase'] = f'Прощупывание {point} · {action}' if action else 'Прощупывание'
                     elif "Executing " in text:
                         job["phase"] = ("Возврат в сохранённую позу" if "workpiece:return" in text else
                                         "Подвод к заготовке" if ":approach" in text else "Проход по контуру и отвод")
@@ -254,7 +309,13 @@ class Controller:
                     raise ValueError("Сначала запустите сцену и дождитесь появления заготовки")
                 geometry = self.object_edges[settings.object]
                 if isinstance(geometry, WorkpieceGeometry):
-                    geometry.contour(settings.face) if settings.selection == 'face' else geometry.select([settings.edge])
+                    if settings.selection == 'face':
+                        if settings.face not in weld_contours(geometry):
+                            raise ValueError('На этой модели нет доступных маршрутов сварки')
+                    else:
+                        if geometry.shape == 'mesh':
+                            raise ValueError('На этой модели нет доступных маршрутов сварки')
+                        geometry.select([settings.edge])
                 if mode != "preview" and not (health["feedback"] and (self.profile.real or health['isaac'])):
                     raise ValueError("Нет свежей обратной связи выбранного робота")
                 if mode == "execute" and not health["controller"]:
@@ -265,6 +326,8 @@ class Controller:
                        "phase": "Запуск", "started": time.time(), "stopping": False, "report": False}
                 environment = dict(os.environ, PYTHONUNBUFFERED="1", RCUTILS_COLORIZED_OUTPUT="0")
                 argv = settings.argv(self.executable, mode, output)+['--robot', self.profile.name]
+                if self.profile.real and mode in ('plan', 'execute'):
+                    argv += ['--probe-standoff']
                 if self.profile.real:
                     argv += ['--use-scene-workpiece']
                 if self.robot_config:
@@ -296,8 +359,9 @@ class Controller:
         if not isinstance(data, dict) or set(data)-{'object', 'shape'}:
             raise ValueError('Ожидаются ID объекта и форма заготовки')
         shape = data.get('shape')
-        if shape not in ('box', 'cylinder', 'prism'):
-            raise ValueError('Выберите параллелепипед, цилиндр или треугольную призму')
+        catalog = next((key for key, _, _ in WORKPIECE_CATALOG if shape == CATALOG_PREFIX + key), None)
+        if catalog is None:
+            raise ValueError('Выберите CAD-заготовку из каталога')
         object_id = Settings.parse({'object': data.get('object', 'welding_workpiece')}).object
         with self.commands:
             with self.lock:
@@ -313,31 +377,40 @@ class Controller:
                     current.wait(timeout=8)
                 except subprocess.TimeoutExpired:
                     raise ValueError('Предпросмотр ещё останавливается') from None
-            # Presets are 0.20 m high; keep their bottom on the table at Z=0.
-            center = ('0', '-0.6', '0.1') if self.profile.real else ('-1', '0', '0.1')
+            center = ('-0.225', '-0.74', str(JAKA_TABLE_TOP_M)) if self.profile.real else ('-1', '0', '0')
             argv = [sys.executable, str(self.executable.with_name('add_workpiece.py')),
                     '--id', object_id, '--frame', self.profile.frame, '--center', *center,
-                    '--clear-markers']
-            if shape == 'prism':
-                mesh = Path(get_package_share_directory('ur10_isaac_moveit_config'))/'config/triangular_prism.json'
-                argv += ['--shape', 'mesh', '--mesh-json', str(mesh)]
-            else:
-                argv += ['--shape', shape, '--dimensions']
-                argv += ['0.3', '0.3', '0.2'] if shape == 'box' else ['0.2', '0.15']
+                    '--clear-markers', '--catalog-model', catalog]
+            if self.profile.real:
+                argv += ['--require-jaka-idle']
             try:
                 result = subprocess.run(argv, cwd=self.workspace, capture_output=True, text=True,
-                                        errors='replace', timeout=80)
+                                        errors='replace', timeout=90)
             except subprocess.TimeoutExpired:
                 raise ValueError('MoveIt не подтвердил замену заготовки вовремя; проверьте сцену') from None
             if result.returncode:
                 detail = (result.stderr or result.stdout).strip()[-1500:]
                 self.log('scene', detail)
                 raise ValueError('Не удалось заменить заготовку: '+detail)
+            if self.profile.real:
+                scan_directory = self.workspace / 'scans'
+                try:
+                    scan_directory.mkdir(exist_ok=True)
+                    request_path = scan_directory / 'workpiece-scan-request'
+                    temporary = request_path.with_suffix('.tmp')
+                    temporary.write_text(f'MoveIt-{catalog}-{uuid.uuid4().hex}')
+                    temporary.replace(request_path)
+                except OSError as error:
+                    self.log('scanner', f'Деталь заменена, но запрос перезапуска сканера не сохранён: {error}')
             with self.lock:
+                self.scene_generation += 1
+                self.workcell_objects = [obj for obj in self.workcell_objects if obj['id'] != object_id]
+                self.workcell_revision += 1
+                generation = self.scene_generation
                 self.object_edges.pop(object_id, None)
                 self.telemetry['objects'] = [o for o in self.telemetry['objects'] if o['id'] != object_id]
-            self.log('scene', f'Заготовка {object_id} заменена: {shape}; центр (-1, 0, 0.1) м')
-            return {'object': object_id, 'shape': shape}
+            self.log('scene', f'Заготовка {object_id} заменена: {shape}, позиция ({", ".join(center)}) м')
+            return {'object': object_id, 'shape': shape, 'scene_generation': generation}
 
     def scene(self, start, rviz=True):
         with self.commands, self.lock:

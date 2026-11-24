@@ -21,7 +21,7 @@ class WebWorkpieceTests(unittest.TestCase):
         self.directory.cleanup()
 
     def test_presets_use_fixed_argv_and_replace_selected_id(self):
-        for shape in ('box','cylinder','prism'):
+        for shape in ('cad:02-tee-gusset','cad:04-pipe-plate','cad:05-wave-butt'):
             with patch('welding_sim.web_control.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='',stderr='')) as run:
                 result=self.controller.replace_workpiece({'object':'custom_part','shape':shape})
                 argv=run.call_args.args[0]
@@ -29,23 +29,23 @@ class WebWorkpieceTests(unittest.TestCase):
                 self.assertIn('--clear-markers',argv)
                 self.assertEqual(result['shape'],shape)
                 self.assertNotIn('shell',run.call_args.kwargs)
-                if shape=='prism':self.assertTrue(Path(argv[argv.index('--mesh-json')+1]).is_file())
+                self.assertEqual(argv[argv.index('--catalog-model')+1],shape.removeprefix('cad:'))
 
-    def test_real_presets_stand_at_cube_location(self):
+    def test_real_catalog_models_stand_on_table(self):
         self.controller.profile=JAKA
-        for shape in ('box','cylinder','prism'):
+        for shape in ('cad:02-tee-gusset','cad:04-pipe-plate','cad:05-wave-butt'):
             with patch('welding_sim.web_control.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='',stderr='')) as run:
                 self.controller.replace_workpiece({'shape':shape})
                 argv=run.call_args.args[0]
                 index=argv.index('--center')+1
-                self.assertEqual([float(v) for v in argv[index:index+3]],[0.,-.6,.1])
+                self.assertEqual([float(v) for v in argv[index:index+3]],[-.225,-.74,.005])
 
     def test_unknown_form_and_no_scene_are_rejected(self):
         with patch('welding_sim.web_control.subprocess.run') as run:
-            for data in ({'shape':'../../file'}, {'shape':'box','command':'x'}, []):
+            for data in ({'shape':'../../file'}, {'shape':'box'}, {'shape':'cylinder'}, {'shape':'prism'}, {'shape':'cad:04-pipe-plate','command':'x'}, []):
                 with self.assertRaises(ValueError):self.controller.replace_workpiece(data)
             self.controller.telemetry['moveit']=False
-            with self.assertRaises(ValueError):self.controller.replace_workpiece({'shape':'box'})
+            with self.assertRaises(ValueError):self.controller.replace_workpiece({'shape':'cad:04-pipe-plate'})
             run.assert_not_called()
 
     def test_active_motion_and_planning_block_replacement(self):
@@ -53,7 +53,7 @@ class WebWorkpieceTests(unittest.TestCase):
         for mode in ('execute','plan'):
             self.controller.job={'mode':mode}
             with patch('welding_sim.web_control.subprocess.run') as run:
-                with self.assertRaisesRegex(ValueError,'Нельзя менять'):self.controller.replace_workpiece({'shape':'box'})
+                with self.assertRaisesRegex(ValueError,'Нельзя менять'):self.controller.replace_workpiece({'shape':'cad:04-pipe-plate'})
                 run.assert_not_called()
 
     def test_service_failure_and_timeout_are_reported(self):
@@ -62,7 +62,7 @@ class WebWorkpieceTests(unittest.TestCase):
             with patch('welding_sim.web_control.subprocess.run') as run:
                 if isinstance(failure,Exception):run.side_effect=failure
                 else:run.return_value=failure
-                with self.assertRaises(ValueError):self.controller.replace_workpiece({'shape':'cylinder'})
+                with self.assertRaises(ValueError):self.controller.replace_workpiece({'shape':'cad:04-pipe-plate'})
 
 
 if __name__=='__main__':unittest.main()

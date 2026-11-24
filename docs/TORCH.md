@@ -2,14 +2,14 @@
 
 Актуальная масса, демпфирование и полное покрытие корпуса коллизиями:
 [TORCH_DYNAMICS.md](TORCH_DYNAMICS.md). Описанные ниже 26 collision-мешей и
-отдельная оболочка шланга относятся к исходной версии; их заменили 76 оболочек.
+отдельная оболочка шланга относятся к исходной версии; их заменили 75 оболочек.
 
 Настройка наклона и автоматический поиск ориентации для полного прохода:
 [TOOL_ORIENTATION.md](TOOL_ORIENTATION.md).
 
-Подготовлено для `JTM_RevC_MB_EVO36_0140528.usd` из `C:\Users\user\Desktop\ur10`.
-Исходные USD не менялись. Новая сцена `ur_welding_torch.usda` — слой поверх
-`ur_welding.usd` со ссылкой на насадку. Держите эти три файла в одной папке.
+Подготовлено для `JTM_RevC_MB_EVO36_0140528_exposed_tip_50mm.usd` из `C:\Users\user\Desktop\ur10`.
+
+Для замены насадки в существующей сцене Isaac используйте `isaac/replace_torch.py`. Скрипт сохраняет крепление, положение TCP и инерционные параметры. В качестве `--scene` укажите сцену с уже установленной горелкой. На выходе получится новый USD-слой.
 
 ## Запуск
 
@@ -114,13 +114,11 @@ MoveIt использует треугольную поверхность эти
 отдельное окружение Python с `usd-core` и `numpy`, затем:
 
 ```bash
-diagnostics/usd_env/bin/python isaac/attach_torch.py \
-  --source /mnt/c/Users/user/Desktop/ur10/JTM_RevC_MB_EVO36_0140528.usd \
-  --scene /mnt/c/Users/user/Desktop/ur10/ur_welding.usd \
+diagnostics/usd_env/bin/python isaac/replace_torch.py \
+  --source src/ur10_isaac_moveit_config/assets/JTM_RevC_MB_EVO36_0140528_exposed_tip_50mm.usd \
+  --scene /mnt/c/Users/user/Desktop/ur10/ur_welding_torch.usda \
   --output /mnt/c/Users/user/Desktop/ur10/ur_welding_torch_new.usda
 
-diagnostics/usd_env/bin/python isaac/check_torch.py \
-  /mnt/c/Users/user/Desktop/ur10/ur_welding_torch_new.usda
 ```
 
 Выходной файл должен быть новым: существующая сцена не перезаписывается.

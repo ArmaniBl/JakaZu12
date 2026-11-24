@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace as NS
 from copy import deepcopy
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from moveit_msgs.msg import RobotState,RobotTrajectory
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
@@ -11,6 +11,13 @@ from welding_sim.geometry import FaceContour
 from test_table_limits import TableLimitsTests
 import numpy as np
 class BestRouteTests(unittest.TestCase):
+ def setUp(self):
+  self.clearance = Mock()
+  self.clearance.minimum.return_value = dict(clearance_m=.020, link='Link_5', stage='complete')
+  patcher = patch('welding_sim.runner.TableClearance', return_value=self.clearance)
+  patcher.start()
+  self.addCleanup(patcher.stop)
+
  def fixture(self):
   state=RobotState(joint_state=JointState(name=list(JAKA.joints),position=[0.]*6))
   scene=TableLimitsTests().scene();published=[]
@@ -25,6 +32,11 @@ class BestRouteTests(unittest.TestCase):
    t.joint_trajectory.points=[a,b];fake.report['candidate_cost']=cost;fake.cartesian_targets={'chosen':cost};fake.joint_targets={}
    return [('complete',t)]
   fake.plan_fixed=plan
+  fake.remote_parameter=Mock()
+  fake.planning_floor=None
+  fake.check_world_collisions_enabled=Mock()
+  fake.check_body_path=Mock()
+  fake.end_state=WeldingRunner.end_state
   paths=[(None,np.zeros((2,3)),np.zeros((2,3)),np.array([0.,0.,0.,1.]))]
   return fake,paths,published
  def test_selects_best_complete_route_instead_of_first_and_restores_targets(self):
@@ -32,6 +44,23 @@ class BestRouteTests(unittest.TestCase):
   self.assertEqual(stages[0][1].joint_trajectory.points[-1].positions[0],1.)
   self.assertEqual(f.cartesian_targets,{'chosen':1.});self.assertEqual(len(published),1)
   self.assertEqual(f.report['optimization']['complete_candidates'],4)
+  self.assertIsNone(f.optimization_start)
+  f.check_body_path.assert_called_once_with('complete',stages[0][1],published[0].trajectory_start.joint_state)
+ def test_low_clearance_candidate_is_rejected_and_search_continues(self):
+  f,p,published=self.fixture()
+  self.clearance.minimum.side_effect = [
+   dict(clearance_m=margin, link='Link_5', stage='complete') for margin in (.025,.004,.020,.018)]
+  stages=WeldingRunner.plan_best(f,p)
+  self.assertEqual(stages[0][1].joint_trajectory.points[-1].positions[0],2.)
+  self.assertEqual(f.report['chosen_orientation']['table_clearance']['clearance_m'],.020)
+  self.assertEqual(f.report['orientation_attempts'][1]['status'],'failed')
+
+ def test_collision_failure_prevents_publishing_selected_route(self):
+  f,p,published=self.fixture()
+  f.check_body_path.side_effect=RuntimeError('Whole-body collision check failed')
+  with self.assertRaisesRegex(RuntimeError,'Whole-body collision'):
+   WeldingRunner.plan_best(f,p)
+  self.assertFalse(published)
  def test_scene_change_invalidates_selected_plan(self):
   f,p,published=self.fixture();f.call=lambda *args:NS(scene=NS(world=NS(collision_objects=[]),robot_state=f.initial_scene.robot_state))
   with self.assertRaisesRegex(RuntimeError,'scene changed'):WeldingRunner.plan_best(f,p)

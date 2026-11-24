@@ -10,6 +10,31 @@ from .geometry import quaternion, rotation, FaceContour
 
 PREVIEW_TYPE='scanner_preview_unregistered'
 SEAM_PREFIX='jaka-weld-seams/v1:'
+CATALOG_PREFIX = 'cad:'
+WORKPIECE_CATALOG = (
+    ('02-tee-gusset', 'Тавровая деталь с косынкой', '200 × 120 × 60 мм'),
+    ('04-pipe-plate', 'Труба на пластине', '200 × 120 × 50 мм'),
+    ('05-wave-butt', 'Пластина с волнистым стыком', '200 × 120 × 6 мм'),
+)
+
+
+# Full CAD contours retained for catalog models without authored weld paths.
+CATALOG_CONTOURS = {
+    '02-tee-gusset': {
+        'face_119': 'Верхний периметр основания',
+        'face_3': 'Контур тавра с одной стороны',
+        'face_685': 'Контур тавра с другой стороны',
+        'face_690': 'Верхний контур стенки',
+        'face_694': 'Косынка · наклонная грань 45°',
+        'face_0': 'Косынка · боковая грань со стороны −X',
+        'face_691': 'Косынка · боковая грань со стороны +X',
+    },
+    '04-pipe-plate': {
+        'face_237': 'Верхний периметр основания',
+        'face_813': 'Наружное кольцо торца трубы',
+        'face_813_hole_1': 'Внутреннее кольцо торца трубы',
+    },
+}
 
 
 def mesh_signature(vertices, triangles):
@@ -19,7 +44,17 @@ def mesh_signature(vertices, triangles):
 
 def apply_model_seams(obj, geometry, center, orientation):
     """Read weld paths carried atomically with their collision mesh and pose."""
-    if not obj.type.db.startswith(SEAM_PREFIX):return geometry
+    key = obj.type.key.removeprefix(CATALOG_PREFIX)
+    contours = CATALOG_CONTOURS.get(key, {}) if obj.type.key.startswith(CATALOG_PREFIX) else {}
+    if all(name in geometry.contours for name in contours):
+        for name, label in contours.items():
+            geometry.contours[name].label = label
+        geometry.selectable_seams = tuple(contours)
+        if key == '02-tee-gusset':
+            # Keep the side that contacted the real table farther above it.
+            geometry.contours['face_685'].extra_vertical_clearance_m = .015
+    if not obj.type.db.startswith(SEAM_PREFIX):
+        return geometry
     metadata=json.loads(obj.type.db[len(SEAM_PREFIX):])
     mesh=obj.meshes[0]
     vertices=np.array([[v.x,v.y,v.z] for v in mesh.vertices])
@@ -41,10 +76,20 @@ def apply_model_seams(obj, geometry, center, orientation):
                 or np.any(points<vertices.min(0)-.001) or np.any(points>vertices.max(0)+.001)
                 or np.ptp(points@normal)>1e-6):
             raise ValueError('Invalid local weld path')
+        radial_center = None
+        if 'radial_offset_center_mm' in seam:
+            radial_center = np.asarray(seam['radial_offset_center_mm'], dtype=float)*.001
+            if (radial_center.shape != (3,) or not np.isfinite(radial_center).all()
+                    or not np.allclose((points-radial_center)@normal, 0., atol=1e-6)
+                    or np.any(np.linalg.norm(points-radial_center, axis=1) < .001)):
+                raise ValueError('Invalid center of radial weld offset')
+            radial_center = transform @ radial_center + center
         geometry.contours[name]=FaceContour(name,points@transform.T+center,
-            transform@normal,str(seam.get('label',name)),kind='weld')
+            transform@normal,str(seam.get('label',name)),kind='weld',
+            level_tcp=name == 'seam_center' and np.allclose(normal, [0., 0., 1.]),
+            radial_offset_center=radial_center)
         selected.append(name)
-    geometry.selectable_seams=tuple(selected)
+    geometry.selectable_seams=(*selected, *geometry.selectable_seams)
     return geometry
 
 

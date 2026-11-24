@@ -26,6 +26,44 @@ class Scanner:
 
 
 class CaptureLoopTests(unittest.TestCase):
+    def test_workpiece_change_waits_for_idle_and_restarts_a_paused_loop(self):
+        calls = []
+        state = dict(job=dict(state='CAPTURING'),
+                     active_task=dict(name='old', part_id='part'), fresh_capture_for_task=True)
+
+        def request(action, body=None):
+            calls.append((action, body))
+            if action == 'capture':
+                return dict(job=dict(state='CAPTURING', capture_id='new'))
+            return state
+
+        loop = CaptureLoop(request, continuous=True)
+        loop.paused = 'Capture limit'
+        loop.failures = 3
+        fetch = lambda: self.fail('The old task cloud must not be fetched')
+        self.assertIsNone(loop.poll(fetch, 'MoveIt-new'))
+        self.assertEqual(calls, [('state', None)])
+        state['job']['state'] = 'COMPLETE'
+        self.assertIsNone(loop.poll(fetch, 'MoveIt-new'))
+        self.assertEqual(calls[-2:], [('new-task', dict(name='MoveIt-new', part_id='part')),
+                                      ('capture', None)])
+        self.assertIsNone(loop.paused)
+        self.assertEqual(loop.failures, 0)
+        self.assertEqual(loop.applied_restart, 'MoveIt-new')
+
+    def test_reapplying_same_cad_keeps_inflight_scan_for_export(self):
+        scanner = Scanner()
+        loop = CaptureLoop(scanner.request, continuous=True)
+        task = dict(id='task', name='MoveIt-04-pipe-plate-' + 'a' * 32, capture_count=5)
+        restart = 'MoveIt-04-pipe-plate-' + 'b' * 32
+        scanner.state = dict(job=dict(state='DECODING'), active_task=task)
+        self.assertIsNone(loop.poll(lambda: self.fail('Still decoding'), restart))
+        self.assertEqual(loop.applied_restart, restart)
+        scanner.complete('fresh')
+        scanner.state['active_task'] = dict(task, capture_id='fresh')
+        self.assertEqual(loop.poll(lambda: dict(task_id='task', capture_id='fresh'))['capture_id'], 'fresh')
+        self.assertEqual(scanner.starts, 1)
+
     def test_replaced_capture_cannot_reappear(self):
         scanner=Scanner();loop=CaptureLoop(scanner.request)
         def accept(capture):

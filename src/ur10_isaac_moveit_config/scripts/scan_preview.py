@@ -73,7 +73,7 @@ def main():
     qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
     publisher = node.create_publisher(PointCloud2, '/scanner/preview_points', qos)
     status_publisher = node.create_publisher(String, '/scanner/preview_status', qos)
-    loop = CaptureLoop(lambda action: scanner_request(args.scanner_url, action),
+    loop = CaptureLoop(lambda *request: scanner_request(args.scanner_url, *request),
                        continuous=args.continuous and not args.view_only)
     root = next(p for p in Path(__file__).resolve().parents if (p / 'run_scan_preview.sh').is_file())
     if args.scanner_url=='windows-local' and not args.view_only:
@@ -90,6 +90,9 @@ def main():
     next_fit=0.
     anchor_path = root / 'scans/preview-anchor.json'
     cache_path = root / 'scans/preview-cloud-cache.npz'
+    restart_path = root / 'scans/workpiece-scan-request'
+    restart_ack = root / 'scans/workpiece-scan-applied'
+    applied_restart = restart_ack.read_text().strip() if restart_ack.is_file() else None
     orientation_path = root / 'scans/preview-orientation.json'
     orientation = None
     if orientation_path.is_file() and not args.relevel:
@@ -155,7 +158,22 @@ def main():
             if time.monotonic() >= next_fetch:
                 next_fetch = time.monotonic() + 5.
                 try:
-                    bundle = loop.poll(lambda: fetch_bundle(args.scanner_url))
+                    restart_name = None
+                    if loop.continuous and restart_path.is_file():
+                        requested = restart_path.read_text().strip()
+                        if requested and requested != applied_restart:
+                            restart_name = requested
+                            pending_fit = None
+                    prior_failure = loop.last_failure
+                    bundle = loop.poll(lambda: fetch_bundle(args.scanner_url), restart_name)
+                    if loop.last_failure and loop.last_failure != prior_failure:
+                        node.get_logger().warning(f'Scanner rejected capture: {loop.last_failure}')
+                    if restart_name and loop.applied_restart == restart_name:
+                        temporary_ack = restart_ack.with_suffix('.tmp')
+                        temporary_ack.write_text(restart_name)
+                        temporary_ack.replace(restart_ack)
+                        applied_restart = restart_name
+                        node.get_logger().info(f'Scan request handled for {restart_name}')
                     last_error = None
                     if bundle is not None and bundle['capture_id'] != previous:
                         points = np.asarray(bundle['camera_points_mm'], dtype=float) * .001
@@ -234,7 +252,7 @@ def main():
                     node.get_logger().warning(f'Scanner preview unavailable: {error}')
                     last_error = str(error)
                 status = dict(state=loop.state, continuous=loop.continuous,
-                              paused=loop.paused, error=last_error, updated_unix=updated_at,
+                              paused=loop.paused, error=last_error or loop.last_failure, updated_unix=updated_at,
                               capture_id=loop.owned_capture, registered=False)
                 status['displayed_capture_id'] = displayed_capture
                 status.update(scanner_region=region, preview_center_world_m=[getattr(transform.transform.translation,a) for a in 'xyz'],

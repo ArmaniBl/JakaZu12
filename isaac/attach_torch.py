@@ -41,29 +41,12 @@ def origin(matrix):
             'rpy':' '.join(f'{v:.12g}' for v in (roll,pitch,yaw))}
 
 
-def main():
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source',required=True,type=Path)
-    parser.add_argument('--scene',required=True,type=Path)
-    parser.add_argument('--output',required=True,type=Path)
-    parser.add_argument('--package',type=Path,default=Path(__file__).resolve().parents[1]/'src/ur10_isaac_moveit_config')
-    args=parser.parse_args()
-    if args.output.exists():parser.error('Output already exists; choose a new scene name')
-    source=Usd.Stage.Open(str(args.source))
-    root=source.GetDefaultPrim()
-    mount=source.GetPrimAtPath(str(root.GetPath())+'/MountFrame')
-    tcp=source.GetPrimAtPath(str(root.GetPath())+'/LowerPivot/Frames/TCP')
-    if not mount or not tcp:parser.error('Required MountFrame/TCP is absent')
-    if abs(UsdGeom.GetStageMetersPerUnit(source)-1.)>1e-9:parser.error('Expected a torch in meters')
+def mesh_triangles(source, mount_inverse):
     cache=UsdGeom.XformCache()
-    mount_inverse=cache.GetLocalToWorldTransform(mount).GetInverse()
-    tcp_matrix,contact_extension=working_tip(source)
-    output=args.package/'meshes/torch'
-    output.mkdir(parents=True,exist_ok=True)
     visuals=defaultdict(list);collisions=[];hose_points=[]
     for prim in source.Traverse():
         if prim.HasAPI(UsdPhysics.RigidBodyAPI) or prim.IsA(UsdPhysics.Joint):
-            parser.error('Torch must be a fixed asset without rigid bodies/joints')
+            raise ValueError('Torch must be a fixed asset without rigid bodies/joints')
         if not prim.IsA(UsdGeom.Mesh):continue
         mesh=UsdGeom.Mesh(prim)
         transform=cache.GetLocalToWorldTransform(prim)*mount_inverse
@@ -90,7 +73,30 @@ def main():
                         value=attribute.Get()
                         if isinstance(value,(Gf.Vec3f,Gf.Vec3d)):color=tuple(map(float,value))
         visuals[color].extend(triangles)
-    if not collisions or not visuals:parser.error('No usable visual/collision geometry')
+    if not collisions or not visuals:raise ValueError('No usable visual/collision geometry')
+    return visuals, collisions, hose_points
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source',required=True,type=Path)
+    parser.add_argument('--scene',required=True,type=Path)
+    parser.add_argument('--output',required=True,type=Path)
+    parser.add_argument('--package',type=Path,default=Path(__file__).resolve().parents[1]/'src/ur10_isaac_moveit_config')
+    args=parser.parse_args()
+    if args.output.exists():parser.error('Output already exists; choose a new scene name')
+    source=Usd.Stage.Open(str(args.source))
+    root=source.GetDefaultPrim()
+    mount=source.GetPrimAtPath(str(root.GetPath())+'/MountFrame')
+    tcp=source.GetPrimAtPath(str(root.GetPath())+'/LowerPivot/Frames/TCP')
+    if not mount or not tcp:parser.error('Required MountFrame/TCP is absent')
+    if abs(UsdGeom.GetStageMetersPerUnit(source)-1.)>1e-9:parser.error('Expected a torch in meters')
+    cache=UsdGeom.XformCache()
+    mount_inverse=cache.GetLocalToWorldTransform(mount).GetInverse()
+    tcp_matrix,contact_extension=working_tip(source)
+    output=args.package/'meshes/torch'
+    output.mkdir(parents=True,exist_ok=True)
+    visuals,collisions,hose_points=mesh_triangles(source,mount_inverse)
     stl(output/'collision.stl',np.array(collisions))
     xacro=ET.Element('robot',{'xmlns:xacro':'http://www.ros.org/wiki/xacro'})
     macro=ET.SubElement(xacro,'xacro:macro',{'name':'welding_torch','params':'parent'})

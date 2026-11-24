@@ -71,7 +71,7 @@ class ReturnPoseTests(unittest.TestCase):
     def test_real_job_ends_with_vertical_lift_without_return(self):
         stub=self.stub(trajectory(.3));stub.profile=JAKA
         paths=self.paths()
-        stages=WeldingRunner.plan(stub,paths)
+        stages=WeldingRunner.plan_fixed(stub,paths)
         self.assertEqual(stages[-1][0], 'workpiece:lift')
         stub.joint_motion.assert_not_called()
         last=paths[-1][2][-1];q=paths[-1][3]
@@ -81,13 +81,14 @@ class ReturnPoseTests(unittest.TestCase):
         self.assertAlmostEqual(target.position.z,float(last[2])+.25)
         for actual,expected in zip([target.orientation.x,target.orientation.y,target.orientation.z,target.orientation.w],q):
             self.assertAlmostEqual(actual,float(expected))
-        self.assertEqual(len(stub.cartesian.call_args_list[0].args[1]),len(paths[0][2]))
+        self.assertEqual(len(stub.cartesian.call_args_list[0].args[1]),1)
+        self.assertEqual(len(stub.cartesian.call_args_list[1].args[1]),len(paths[0][2])-1)
 
     def test_blocked_real_lift_prevents_execution_plan(self):
         stub=self.stub(trajectory(.3));stub.profile=JAKA
-        stub.cartesian.side_effect=[trajectory(.2),RuntimeError('lift blocked')]
+        stub.cartesian.side_effect=[trajectory(.2),trajectory(.2),RuntimeError('lift blocked')]
         with self.assertRaisesRegex(RuntimeError,'lift blocked'):
-            WeldingRunner.plan(stub,self.paths())
+            WeldingRunner.plan_fixed(stub,self.paths())
         stub.display.publish.assert_not_called()
 
     def test_return_feedback_is_verified(self):

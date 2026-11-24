@@ -1,4 +1,8 @@
 """Collision walls bounding the whole robot to the tabletop plus 100 mm."""
+
+JAKA_TABLE_TOP_M = .005
+
+
 def wall_specs():
     # Physical table X=[-.44,.36], Y=[-1.065,.135], metres.
     xmin,xmax,ymin,ymax=-.54,.46,-1.165,.235

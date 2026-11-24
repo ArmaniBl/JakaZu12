@@ -45,8 +45,8 @@
   },
   "description": "Origin at front-left tabletop edge; X along A..X, Y along 1..16, Z up. Nominal robot/table placement, not camera registration.",
   "preview_translation_world_m": [
-    -0.13898913929117263,
-    0.0036391644965042547,
+    -0.136447599055018,
+    0.013310802063535344,
     -0.011345482834569936
   ],
   "preview_translation_reference": {
@@ -95,14 +95,14 @@
     "backup_directory": "/home/arm/welding/JakaZu12/scans/calibration-backups/20261119-164027-Q3-S3-T3"
   },
   "preview_yaw_adjustment": {
-    "angle_deg": 180.0,
+    "angle_deg": 0.0,
     "pivot_world_m": [
       -0.21701578593505874,
       -0.7492110249305611,
       0.0
     ],
     "pivot_address": "workpiece_center",
-    "source": "operator: rotate full cloud 180 degrees in table plane about current workpiece center",
+    "source": "operator: reverse the previous 180 degree preview rotation",
     "registered": false,
     "backup_directory": "/home/arm/welding/JakaZu12/scans/calibration-backups/20261119-165344-yaw180"
   },

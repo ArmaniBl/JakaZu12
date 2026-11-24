@@ -108,6 +108,9 @@ class FaceContour:
     kind: str = 'outer'
     face_id: str = ''
     loops: object = None
+    level_tcp: bool = False
+    radial_offset_center: np.ndarray | None = None
+    extra_vertical_clearance_m: float = 0.
 
     @property
     def length(self):
@@ -137,7 +140,17 @@ class FaceContour:
         y_axis = np.cross(z_axis, x_axis)
         x_axis = x_axis*math.cos(roll) + y_axis*math.sin(roll)
         orientation = quaternion(np.column_stack((x_axis, np.cross(z_axis, x_axis), z_axis)))
-        return seam, seam + offset*self.outward, orientation
+        tool_path = seam + offset*self.outward
+        if self.radial_offset_center is not None:
+            radial = seam - self.radial_offset_center
+            radial /= np.linalg.norm(radial, axis=1, keepdims=True)
+            # At a pipe-to-plate joint, stand off from the wall and the plate.
+            tool_path = seam + offset / math.sqrt(2.) * (self.outward + radial)
+        if self.level_tcp:
+            # Use the lowest common Z that preserves the requested clearance
+            # at every point along the modeled seam.
+            tool_path[:, 2] = tool_path[:, 2].max()
+        return seam, tool_path, orientation
 
 
 def face_contour(edges, face):
@@ -316,11 +329,10 @@ def mesh_geometry(vertices, triangles, center=(0, 0, 0), orientation=(0, 0, 0, 1
         if len(entries) == 2 and len(faces) == 1:
             continue
         outward = np.sum([normals[groups[f][0]] for f in faces], axis=0)
-        if np.linalg.norm(outward) < 1e-8:
-            raise ValueError('Mesh has an ambiguous edge normal')
-        edge = Edge(f'edge_{u}_{v}', tuple(f'face_{f}' for f in faces),
-                    vertices[u], vertices[v], outward/np.linalg.norm(outward))
-        edges.append(edge)
+        length = np.linalg.norm(outward)
+        if length >= 1e-8:
+            edges.append(Edge(f'edge_{u}_{v}', tuple(f'face_{f}' for f in faces),
+                              vertices[u], vertices[v], outward/length))
         for f in faces:
             boundaries[f].append((u, v))
     contours = {}

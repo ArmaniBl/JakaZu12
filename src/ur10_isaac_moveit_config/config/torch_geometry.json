@@ -1,26 +1,18 @@
 {
-  "source": "JTM_RevC_MB_EVO36_0140528.usd",
+  "source": "JTM_RevC_MB_EVO36_0140528_exposed_tip_50mm.usd",
   "mount": "MountFrame",
   "tcp": "WeldingTCP",
+  "tcp_definition": "preserved calibrated TCP",
   "tcp_origin": {
     "xyz": "-0.018 0.229114062985 0.101956156188",
     "rpy": "2.44346105075 9.70582262188e-08 -3.14159253792"
   },
-  "collision_triangles": 1484,
-  "visual_triangles": 122908,
-  "visual_materials": 11,
-  "hose_envelope": {
-    "center": [
-      -0.018,
-      -0.2406047284603119,
-      0.11722771325521167
-    ],
-    "size": [
-      0.01999999922513962,
-      0.25120946359634394,
-      0.158662913504988
-    ]
+  "asset_contact_tip_origin": {
+    "xyz": "-0.018 0.225257335732 0.106552425662",
+    "rpy": "2.44346105075 9.70582262188e-08 -3.14159253792"
   },
-  "tcp_definition": "center of forward CopperContactTip face",
-  "contact_extension_from_nozzle_m": 0.0010000120571338478
+  "contact_tip_from_nozzle_frame_m": 5.552447820966756e-09,
+  "collision_triangles": 1772,
+  "visual_triangles": 128200,
+  "visual_materials": 11
 }

@@ -13,6 +13,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from visualization_msgs.msg import Marker, MarkerArray
+from welding_sim.table_limits import JAKA_TABLE_TOP_M
 
 
 def column_name(index):
@@ -108,6 +109,8 @@ class TableGrid(Node):
         config_path = self.declare_parameter('config', default).value
         config = json.loads(Path(config_path).read_text())
         self.markers = make_markers(config)
+        for marker in self.markers.markers:
+            marker.pose.position.z += JAKA_TABLE_TOP_M - config['world_from_table']['translation_m'][2]
         self.publisher = self.create_publisher(MarkerArray, '/table/grid',
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.broadcaster = StaticTransformBroadcaster(self)

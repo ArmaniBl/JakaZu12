@@ -19,11 +19,6 @@ from std_msgs.msg import Header
 from moveit_msgs.srv import GetPlanningScene, ApplyPlanningScene
 from moveit_msgs.action import ExecuteTrajectory
 
-from welding_sim.scan_alignment import (read_cloud, rigid_fit, transform_points,
-                                        validate_transform, digest, align_translation)
-from welding_sim.scan_model import sample_object
-
-
 def signature(obj):
     # CDR padding bytes are not a stable content signature across service calls.
     content = json.dumps(message_to_ordereddict(obj), sort_keys=True, separators=(',', ':'))
@@ -138,6 +133,8 @@ class Bridge(Node):
 
 
 def calibrate(args):
+    from welding_sim.scan_alignment import digest, rigid_fit, transform_points
+
     data = json.loads(Path(args.landmarks).read_text())
     # Independent check landmarks must not be used for fitting.
     transform = rigid_fit(np.array(data['scanner_mm'])*.001, data['world_m'])
@@ -161,6 +158,8 @@ def calibrate(args):
 
 
 def world_cloud(path, units, calibration):
+    from welding_sim.scan_alignment import digest, read_cloud, transform_points, validate_transform
+
     before = (digest(path), digest(calibration))
     config = json.loads(Path(calibration).read_text())
     if (config.get('frame') != 'world' or config.get('fixed_scanner') is not True
@@ -174,6 +173,9 @@ def world_cloud(path, units, calibration):
 
 
 def compare(node, cloud, calibration, units, roi, object_id):
+    from welding_sim.scan_alignment import align_translation, digest
+    from welding_sim.scan_model import sample_object
+
     node.require_idle()
     obj = node.object(object_id)
     points = world_cloud(cloud, units, calibration)

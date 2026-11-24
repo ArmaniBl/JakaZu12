@@ -12,6 +12,7 @@ class RobotProfile:
     name: str = 'isaac_ur10'
     real: bool = False
     model: str = 'ur10'
+    vertical_clearance_m: float = 0.
     group: str = 'ur_manipulator'
     tip: str = 'welding_tcp'
     frame: str = 'world'
@@ -30,12 +31,18 @@ class RobotProfile:
     def publisher_matches(self, name):
         return name.startswith(self.publisher[:-1]) if self.publisher.endswith('*') else name == self.publisher
 
+    def path_vertical_clearance(self, contour):
+        extra = getattr(contour, 'extra_vertical_clearance_m', 0.) if self.real else 0.
+        return self.vertical_clearance_m + extra
+
     def payload(self):
         return asdict(self)
 
 
 ISAAC = RobotProfile()
 JAKA = RobotProfile(name='jaka_real', real=True, model='jaka_zu12', group='jaka_zu12',
+                   # Temporary allowance for the measured RViz-to-table discrepancy.
+                   vertical_clearance_m=.011,
                    tip='welding_tcp', joint_states='/joint_states', publisher='moveit_server',
                    trajectory_action='/jaka_zu12_controller/follow_joint_trajectory',
                    joints=tuple(f'joint_{i}' for i in range(1, 7)),
