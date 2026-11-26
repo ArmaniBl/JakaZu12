@@ -79,13 +79,21 @@ def rigid2(source,target,weights):
     return rotation,b-rotation@a
 
 
-def fit_preview(points_world,vertices_mm,triangles, reference=None, *, table_top=None):
+def fit_preview(points_world,vertices_mm,triangles, reference=None, *, table_top=None, allow_side_view=False):
     vertices, faces = mesh_arrays(vertices_mm, triangles)
     extent = np.ptp(vertices, axis=0)
     if extent[2] > .3 * min(extent[:2]) and table_top is not None:
-        return fit_supported_preview(points_world, vertices, faces, reference, table_top)
+        return fit_supported_preview(points_world, vertices, faces, reference, table_top, allow_side_view)
     vertices,model=top_surface(vertices_mm,triangles)
     scan,origin,basis=dominant_plane(points_world)
+    if table_top is not None:
+        # A flat part rests on the table. Use the scan for XY and yaw and
+        # compare its observed surface to the height of the supported CAD.
+        top = table_top + extent[2]
+        support_error = float(np.percentile(np.abs(scan[:,2]-top),95))
+        if support_error > .008:
+            raise ValueError('Measured top surface height disagrees with the CAD on the table')
+        basis = np.eye(3)
     target=(scan-origin)@basis[:,:2]
     # Uniform samples prevent a densely reconstructed corner dominating the fit.
     _,indices=np.unique(np.floor(target/.001),axis=0,return_index=True);target=target[indices]
@@ -146,6 +154,9 @@ def fit_preview(points_world,vertices_mm,triangles, reference=None, *, table_top
         r3=np.eye(3);r3[:2,:2]=rotation
         transform=np.eye(4);transform[:3,:3]=basis@r3
         transform[:3,3]=origin+basis[:,:2]@translation-transform[:3,:3]@np.array([0.,0.,model[0,2]])
+        if table_top is not None:
+            transform[2,3] = table_top - vertices[:,2].min()
+            quality['supported_top_p95_m'] = support_error
         (accepted if full_fit else partial).append((rmse,transform,quality))
     fits = accepted or partial
     if not fits:raise ValueError('CAD and scan mismatch: no sufficiently covered rigid fit')
@@ -191,7 +202,7 @@ def sample_supported_surface(vertices, faces):
     return voxel_sample(sampled[sampled[:, 2] > .002], .0015)
 
 
-def fit_supported_preview(points_world, vertices, faces, reference, table_top):
+def fit_supported_preview(points_world, vertices, faces, reference, table_top, allow_side_view):
     # The part rests on the table. Only XY and yaw are observable placement variables.
     bottom = vertices[:, 2].min()
     vertices = vertices - [0., 0., bottom]
@@ -255,6 +266,7 @@ def fit_supported_preview(points_world, vertices, faces, reference, table_top):
 
     coarse = voxel_sample(scan, .005)
     matches = []
+    side_matches = []
     local = scan.copy()
     for rotation, translation in seeds:
         rotation, translation, _ = refine(coarse, rotation, translation, 30)
@@ -273,10 +285,17 @@ def fit_supported_preview(points_world, vertices, faces, reference, table_top):
         reverse, _ = scan_tree.query(moved)
         coverage = float(np.mean(reverse < .0045))
         feature_coverage = float(np.mean(reverse[feature] < .0045))
-        if coverage < .44 or feature_coverage < .40:
+        if coverage < .44:
             continue
         rmse = float(np.sqrt(np.mean(np.minimum(residual, .009)**2)))
-        if rmse > .0035:
+        side_view = feature_coverage < .40
+        if side_view:
+            # Occluded faces do not count against a one-sided scan when the
+            # visible base and upright surface both agree closely with CAD.
+            if (not allow_side_view or feature_coverage < .15 or rmse > .002
+                    or min(covered.mean(), covered[high].mean()) < .95):
+                continue
+        elif rmse > .0035:
             continue
         quality = dict(rmse_m=rmse, p95_m=float(np.percentile(residual, 95)),
                        model_coverage=coverage, elevated_model_coverage=feature_coverage,
@@ -285,7 +304,12 @@ def fit_supported_preview(points_world, vertices, faces, reference, table_top):
                        preliminary=True, execution_ready=False, scope='visible surfaces of an upright part')
         yaw = math.atan2(rotation[1, 0], rotation[0, 0])
         score = rmse + .002 * (1 - feature_coverage) + .001 * (1 - coverage)
-        matches.append((score, yaw, rotation, translation, quality))
+        if side_view:
+            quality['side_view'] = True
+            side_matches.append((score, yaw, rotation, translation, quality))
+        else:
+            matches.append((score, yaw, rotation, translation, quality))
+    matches = matches or side_matches
     if not matches:
         raise ValueError('Visible scan surfaces do not match the selected 3D CAD')
 

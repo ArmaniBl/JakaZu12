@@ -316,14 +316,37 @@ function updateControls(){
   $('ready-description').textContent=isRunning()?'Состояние и журнал обновляются автоматически':ready?'Предпросмотр → планирование → выполнение':real?'Запустите драйвер JAKA и добавьте заготовку в MoveIt':'Запустите сцену и включите Play в Isaac Sim';
   $('connection-hint').textContent=ready?'Все компоненты подключены. Можно построить план.':real?'Ожидаем драйвер JAKA, состояния joint_1…joint_6 и заготовку в MoveIt.':h.moveit&&!h.isaac?'Включите Play в Isaac Sim для получения состояний суставов.':'Запустите сцену и включите воспроизведение в Isaac Sim.';
 }
+function renderPlanningProgress(job){
+  const progress=job?.planning_progress;
+  const section=$('planning-progress'),bar=$('planning-progress-bar');
+  section.hidden=!progress;
+  if(!progress)return;
+  const {phase,completed,total,viable}=progress;
+  const labels={
+    prepare:'Подготовка сцены',
+    search:`Проверено вариантов: ${completed} из ${total} · Подходят: ${viable}`,
+    verify:`Проверка коллизий: ${completed} из ${total} этапов`,
+    ready:'Маршрут построен'
+  };
+  let label=labels[phase];
+  if(job.state==='cancelled'&&phase!=='ready')label+=' · Отменено';
+  if(job.state==='failed'&&phase!=='ready')label+=' · Ошибка';
+  $('planning-progress-label').textContent=label;
+  if(total>0){bar.max=total;bar.value=completed;}
+  else if(job.state==='running'){bar.removeAttribute('value');}
+  else{bar.max=1;bar.value=0;}
+}
 function renderJob(){
   const job=state?.job,active=isRunning();
+  renderPlanningProgress(job);
   const chosen=job?.chosen_orientation;
   $('orientation-result').hidden=!chosen;
   if(chosen)$('orientation-result').textContent=`Выбрано: наклон ${chosen.tilt_deg}° · направление ${chosen.direction_deg}° · доп. поворот ${chosen.roll_delta_deg}°`;
   $('operation-type').textContent=job?{preview:'ПРЕДПРОСМОТР',plan:'ПЛАНИРОВАНИЕ',execute:'ВЫПОЛНЕНИЕ'}[job.mode]:'ОЖИДАНИЕ';
   $('operation-phase').textContent=job?job.phase:'Всё начинается с выбора участка';
   $('operation-light').classList.toggle('active',active);$('activity-track').classList.toggle('running',active);$('activity-track').classList.toggle('done',job?.state==='succeeded');
+  $('activity-track').hidden=Boolean(job?.planning_progress)&&
+    (job.mode==='plan'||job.planning_progress.phase!=='ready'||!active);
   $('operation-subtitle').textContent=job?.stopping?'Запрошена отмена':active?'Процесс выполняется':job?.state==='failed'?'Смотрите причину в журнале':job?.state==='cancelled'?'Операция отменена':job?'Операция завершена':'Процесс не запущен';
   $('report-link').hidden=!job?.report;if(job?.report){$('report-link').href='/api/report/'+job.id;$('report-link').download='welding-'+job.id+'.json';}
   $('step-select').classList.toggle('active',!active||job?.mode==='preview');$('step-plan').classList.toggle('active',active&&job?.mode==='plan');$('step-execute').classList.toggle('active',active&&job?.mode==='execute');

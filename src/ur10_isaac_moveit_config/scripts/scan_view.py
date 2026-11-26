@@ -88,3 +88,56 @@ def level_rotation(points, table_yaw_deg, nominal_down_deg=30.):
                 reference_point_count=len(sample), estimated_down_angle_deg=down_angle,
                 table_yaw_deg=table_yaw_deg, heading='increasing_rows',
                 source='dominant plane leveling with operator-assigned heading', registered=False)
+
+
+def tabletop_arc(points, scanner_origin, table_yaw_deg, nominal_down_deg, tabletop_z):
+    """Rotate the detected plane about its intersection with the tabletop."""
+    from scipy.spatial.transform import Rotation
+
+    reference = level_rotation(points, table_yaw_deg, nominal_down_deg)
+    camera_up = np.asarray(reference['reference_normal_camera'])
+    plane_offset = float(np.median(np.asarray(points) @ camera_up))
+
+    heading = math.radians(table_yaw_deg + 90.)
+    pitch = math.radians(nominal_down_deg)
+    forward = np.array([math.cos(heading), math.sin(heading), 0.])
+    vertical = np.array([0., 0., 1.])
+    right = np.cross(vertical, forward)
+    optical_axis = math.cos(pitch) * forward - math.sin(pitch) * vertical
+    nominal = np.column_stack((right, np.cross(optical_axis, right), optical_axis))
+
+    position = np.asarray(scanner_origin, dtype=float)
+    normal = nominal @ camera_up
+    horizontal = normal.copy()
+    horizontal[2] = 0.
+    slope = np.linalg.norm(horizontal)
+    angle = math.atan2(slope, normal[2])
+    pivot = position.copy()
+    pivot[2] = tabletop_z
+    plane_point = position + normal * plane_offset
+
+    if slope < 1e-8:
+        # Parallel planes have no intersection; use the limiting vertical shift.
+        correction = np.eye(3)
+        aligned_position = position + vertical * (tabletop_z - plane_point[2])
+        pivot = None
+    else:
+        pivot += horizontal * (normal @ (plane_point - pivot) / slope**2)
+        axis = np.cross(normal, vertical) / slope
+        correction = Rotation.from_rotvec(axis * angle).as_matrix()
+        aligned_position = pivot + correction @ (position - pivot)
+
+    return dict(
+        rotation=(correction @ nominal).tolist(),
+        translation_m=aligned_position.tolist(),
+        nominal_scanner_origin_m=position.tolist(),
+        nominal_down_deg=nominal_down_deg,
+        estimated_down_angle_deg=reference['estimated_down_angle_deg'],
+        arc_angle_deg=math.degrees(angle),
+        pivot_world_m=None if pivot is None else pivot.tolist(),
+        tabletop_z_m=tabletop_z,
+        plane_offset_m=plane_offset,
+        plane_inliers=reference['plane_inliers'],
+        reference_point_count=reference['reference_point_count'],
+        registered=False,
+    )

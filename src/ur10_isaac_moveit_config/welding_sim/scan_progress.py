@@ -6,6 +6,8 @@ import re
 import subprocess
 import time
 
+from .operation_lock import welding_operation_active
+
 
 def progress_payload(state, now=None):
     now = time.time() if now is None else now
@@ -45,10 +47,32 @@ def scanner_state(workspace):
     return json.loads(result.stdout)
 
 
+def table_progress(workspace, progress):
+    # A legacy Windows job can fail before the tabletop reconstruction finishes.
+    path = Path(workspace) / 'scans/table-stereo-progress.json'
+    try:
+        latest = json.loads(path.read_text())
+        age = progress['observed_unix'] - latest['observed_unix']
+        if (latest['capture_id'] != progress.get('capture_id') or not -5 <= age <= 120
+                or progress['state'] not in ('DECODING', 'COMPLETE', 'COMPLETED', 'FAILED')):
+            return progress
+        phase = latest['state']
+        progress = dict(progress, state='DECODING' if phase == 'CAPTURING' else phase)
+        if phase in ('COMPLETE', 'FAILED'):
+            progress['finished_unix'] = latest['observed_unix']
+        else:
+            progress['finished_unix'] = None
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    return progress
+
 def monitor_progress(controller, stop):
     while not stop.is_set():
         try:
-            progress = progress_payload(scanner_state(controller.workspace))
+            if welding_operation_active():
+                progress = dict(state='PAUSED_MOTION', observed_unix=time.time())
+            else:
+                progress = table_progress(controller.workspace, progress_payload(scanner_state(controller.workspace)))
         except (OSError, ValueError, TypeError, subprocess.SubprocessError):
             progress = dict(state='UNAVAILABLE', observed_unix=time.time())
         with controller.lock:

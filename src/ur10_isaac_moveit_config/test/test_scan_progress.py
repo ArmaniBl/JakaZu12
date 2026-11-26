@@ -1,5 +1,8 @@
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
-from welding_sim.scan_progress import progress_payload
+from welding_sim.scan_progress import progress_payload, table_progress
 
 
 class ScanProgressTests(unittest.TestCase):
@@ -19,6 +22,18 @@ class ScanProgressTests(unittest.TestCase):
     def test_invalid_progress_is_indeterminate(self):
         for text in ['Pattern 42/41 captured','Pattern 1/0 captured','Connecting cameras','<script>']:
             self.assertIsNone(progress_payload(dict(job=dict(state='CAPTURING',progress=text)))['percent'])
+
+    def test_active_table_result_supersedes_legacy_failure_for_the_same_scan(self):
+        with TemporaryDirectory() as directory:
+            scans = Path(directory) / 'scans'
+            scans.mkdir()
+            report = scans / 'table-stereo-progress.json'
+            failed = progress_payload({'job': {'state': 'FAILED', 'capture_id': 'own'}}, now=1000)
+            for phase in ('DECODING', 'COMPLETE', 'FAILED'):
+                report.write_text(json.dumps(dict(capture_id='own', state=phase, observed_unix=999)))
+                self.assertEqual(table_progress(directory, failed)['state'], phase)
+            report.write_text(json.dumps(dict(capture_id='other', state='COMPLETE', observed_unix=999)))
+            self.assertEqual(table_progress(directory, failed)['state'], 'FAILED')
 
     def test_failed_scan_is_not_complete(self):
         result=progress_payload(dict(job=dict(state='FAILED',capture_id='scan')))

@@ -69,7 +69,8 @@ class AutoWorkpiece:
                 raise ValueError('Automatic preview requires a horizontal table')
             half=np.array(floor.primitives[0].dimensions)/2
             transform, quality = fit_preview(points, model['vertices_mm'], model['triangles'], reference,
-                                             table_top=floor_pose[2,3]+half[2])
+                                             table_top=floor_pose[2,3]+half[2],
+                                             allow_side_view=Path(model['part_name']).stem == '02-tee-gusset')
             obj=preview_object(model,transform)
             if catalog:
                 obj.type.key = current.type.key

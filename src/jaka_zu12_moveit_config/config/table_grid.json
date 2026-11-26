@@ -106,6 +106,50 @@
     "registered": false,
     "backup_directory": "/home/arm/welding/JakaZu12/scans/calibration-backups/20261119-165344-yaw180"
   },
+  "preview_display_table_alignment": {
+    "rotation": [
+      [
+        0.0017800464583779365,
+        0.4797953097711491,
+        0.877378648108223
+      ],
+      [
+        0.9999214400556734,
+        0.010032084530795479,
+        -0.007514718687703205
+      ],
+      [
+        -0.012407463543946357,
+        0.87732309783886,
+        -0.4797397595017861
+      ]
+    ],
+    "translation_m": [
+      -0.4620151371858731,
+      -0.8377043822298963,
+      0.23256127772933935
+    ],
+    "nominal_scanner_origin_m": [
+      -0.4099999999999999,
+      -0.84,
+      0.14
+    ],
+    "nominal_down_deg": 45.0,
+    "estimated_down_angle_deg": 28.668406678331984,
+    "arc_angle_deg": 16.344228750444117,
+    "pivot_world_m": [
+      -0.7579705415735949,
+      -0.8246427905043401,
+      0.005
+    ],
+    "tabletop_z_m": 0.005,
+    "plane_offset_m": -0.22756127772933935,
+    "plane_inliers": 11176,
+    "reference_point_count": 11231,
+    "registered": false,
+    "frame_signature": "64fbde949c9770566e8d5c627c0c8102055aed54648cf9fa2952115a63caf7b5",
+    "reference_capture_id": "d45786ffc969459c8b6afc1245bfb434"
+  },
   "preview_metric_scale": {
     "factor": 1.1178180784627967,
     "source": "operator confirmed physical wave-butt rectangle dimensions 200 x 120 mm",

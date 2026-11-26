@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from scan_view import level_rotation, table_height_anchor, yaw_about_point, scaled_preview_points
+from scan_view import level_rotation, table_height_anchor, tabletop_arc, yaw_about_point, scaled_preview_points
 
 
 class ScanViewTests(unittest.TestCase):
@@ -67,6 +67,17 @@ class ScanViewTests(unittest.TestCase):
         self.assertAlmostEqual(float(np.percentile(after[:,2],2)),0.)
         np.testing.assert_allclose(after[:,:2],before[:,:2],atol=1e-12)
         np.testing.assert_allclose(np.diff(after,axis=0),np.diff(before,axis=0),atol=1e-12)
+
+    def test_tabletop_arc_preserves_distances_and_places_plane_at_table_height(self):
+        points, _ = self.reference()
+        result = tabletop_arc(points, [-.410, -.840, .140], -90., 45., .005)
+        rotation = np.array(result['rotation'])
+        moved = points @ rotation.T + result['translation_m']
+        np.testing.assert_allclose(moved[:, 2], .005, atol=1e-10)
+        np.testing.assert_allclose(np.linalg.norm(np.diff(moved, axis=0), axis=1),
+                                   np.linalg.norm(np.diff(points, axis=0), axis=1), atol=1e-12)
+        self.assertAlmostEqual(result['arc_angle_deg'], 7.)
+        self.assertAlmostEqual(result['pivot_world_m'][2], .005)
 
     def test_yaw_preserves_reference_height_and_geometry(self):
         points,_ = self.reference()

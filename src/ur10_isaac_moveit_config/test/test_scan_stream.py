@@ -1,10 +1,13 @@
 """Acquisition sequencing without cameras, projector, robot or ROS."""
 from pathlib import Path
 import sys
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from scan_stream import CaptureLoop
+from welding_sim.operation_lock import welding_operation, welding_operation_active
 
 
 class Scanner:
@@ -89,6 +92,85 @@ class CaptureLoopTests(unittest.TestCase):
         scanner.complete('1')
         self.assertEqual(loop.poll(lambda: 'new cloud'), 'new cloud')
         self.assertEqual(scanner.starts, 2)
+
+    def test_motion_cancels_owned_capture_and_resumes_once_at_end(self):
+        scanner = Scanner()
+        cancellations = []
+        def request(action):
+            if action == 'cancel':
+                cancellations.append(scanner.state['job']['capture_id'])
+                return scanner.state
+            return scanner.request(action)
+
+        loop = CaptureLoop(request, continuous=True)
+        loop.poll(lambda: None)
+        for _ in range(3):
+            loop.poll(lambda: self.fail('Must not export during motion'), moving=lambda: True)
+            self.assertEqual(loop.state, 'PAUSED_MOTION')
+        self.assertEqual(cancellations, ['1'])
+        self.assertEqual(scanner.starts, 1)
+        # A capture may complete before the cancellation reaches the scanner.
+        scanner.complete('1')
+        scanner.state['active_task']['capture_id'] = '1'
+        loop.poll(lambda: self.fail('Must not publish a scan interrupted by motion'))
+        self.assertEqual(scanner.starts, 2)
+        self.assertIsNone(loop.paused)
+
+    def test_operator_cancel_during_idle_stays_paused_after_an_operation(self):
+        scanner = Scanner()
+        loop = CaptureLoop(scanner.request, continuous=True)
+        loop.poll(lambda: None)
+        scanner.state['job']['state'] = 'CANCELLED'
+        loop.poll(lambda: None)
+        loop.poll(lambda: None, moving=lambda: True)
+        loop.poll(lambda: None)
+        self.assertEqual(scanner.starts, 1)
+        self.assertTrue(loop.paused)
+
+    def test_operation_lock_covers_stage_gaps_and_releases_on_failure(self):
+        with TemporaryDirectory() as directory:
+            with patch('welding_sim.operation_lock._path', return_value=Path(directory)/'operation.lock'):
+                self.assertFalse(welding_operation_active())
+                with self.assertRaisesRegex(ValueError, 'stage failed'):
+                    with welding_operation():
+                        self.assertTrue(welding_operation_active())
+                        with self.assertRaisesRegex(RuntimeError, 'operation is already running'):
+                            with welding_operation():
+                                self.fail('Overlapping job')
+                        raise ValueError('stage failed')
+                self.assertFalse(welding_operation_active())
+
+    def test_table_reconstruction_reuses_completed_frames_after_legacy_failure(self):
+        scanner = Scanner()
+        loop = CaptureLoop(scanner.request, continuous=True)
+        exports = lambda: self.fail('Do not fetch a legacy export with tabletop stereo')
+        reconstruct = lambda capture, task: dict(capture_id=capture, task_id=task)
+        self.assertIsNone(loop.poll(exports, reconstruct=reconstruct))
+        scanner.state['job'].update(state='FAILED', reason='legacy geometry rejected')
+        result = loop.poll(exports, reconstruct=reconstruct)
+        self.assertEqual(result['capture_id'], '1')
+        self.assertEqual(loop.failures, 0)
+        self.assertEqual(scanner.starts, 2)
+
+    def test_table_cloud_is_published_before_legacy_worker_finishes(self):
+        scanner = Scanner()
+        loop = CaptureLoop(scanner.request, continuous=True)
+        calls = []
+
+        def reconstruct(capture, task):
+            calls.append(capture)
+            return dict(capture_id=capture, task_id=task)
+
+        loop.poll(lambda: None, reconstruct=reconstruct)
+        scanner.state['job']['state'] = 'DECODING'
+        self.assertEqual(loop.poll(lambda: None, reconstruct=reconstruct)['capture_id'], '1')
+        self.assertEqual(scanner.starts, 1)
+        self.assertIsNone(loop.poll(lambda: None, reconstruct=reconstruct))
+        scanner.state['job'].update(state='FAILED', reason='legacy geometry rejected')
+        self.assertIsNone(loop.poll(lambda: None, reconstruct=reconstruct))
+        self.assertEqual(calls, ['1'])
+        self.assertEqual(scanner.starts, 2)
+        self.assertIsNone(loop.last_failure)
 
     def test_operator_cancel_stays_paused(self):
         scanner = Scanner()

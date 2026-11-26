@@ -249,7 +249,14 @@ class Controller:
             self.log(source, text)
             if job:
                 with self.lock:
-                    if 'Orientation search:' in text:
+                    progress = re.search(r'Planning progress: (search|verify|ready) (\d+) (\d+) (\d+)$', text)
+                    if progress and job['mode'] in ('plan', 'execute'):
+                        phase = progress[1]
+                        completed, total, viable = map(int, progress.groups()[1:])
+                        if 0 <= viable <= completed <= total and total:
+                            job['planning_progress'] = dict(phase=phase, completed=completed, total=total,
+                                                            viable=viable)
+                    elif 'Orientation search:' in text:
                         job['phase']='Подбор наклона и поворота горелки'
                     elif "Planning " in text:
                         job["phase"] = "Планирование маршрута"
@@ -324,6 +331,8 @@ class Controller:
                 output = self.report_root / job_id
                 job = {"id": job_id, "mode": mode, "settings": asdict(settings), "state": "running",
                        "phase": "Запуск", "started": time.time(), "stopping": False, "report": False}
+                if mode != 'preview':
+                    job['planning_progress'] = dict(phase='prepare', completed=0, total=0, viable=0)
                 environment = dict(os.environ, PYTHONUNBUFFERED="1", RCUTILS_COLORIZED_OUTPUT="0")
                 argv = settings.argv(self.executable, mode, output)+['--robot', self.profile.name]
                 if self.profile.real and mode in ('plan', 'execute'):

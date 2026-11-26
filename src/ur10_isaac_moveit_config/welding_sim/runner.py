@@ -1,6 +1,7 @@
 """Select workpiece contours and plan/execute them with a robot-specific profile."""
 import argparse
 from collections import deque
+from contextlib import ExitStack
 from copy import deepcopy
 from datetime import datetime
 import json
@@ -36,6 +37,7 @@ from .geometry import box_geometry, cylinder_geometry, mesh_geometry
 from .probing import probe_contacts
 from .table_clearance import JOINT_SAMPLE_RAD, TABLE_CLEARANCE_M, TableClearance
 from .jaka_feedback import FeedbackCapture
+from .operation_lock import welding_operation
 
 PROBE_SPEED_M_S = .01
 PROBE_STANDOFF_M = .008
@@ -89,6 +91,10 @@ def object_edges(obj):
 def profile_of(node):
     # Default keeps old embedders/test stubs compatible.
     return getattr(node, 'profile', ISAAC)
+
+
+def planning_progress(node, phase, completed=0, total=0, viable=0):
+    node.get_logger().info(f'Planning progress: {phase} {completed} {total} {viable}')
 
 
 class WeldingRunner(Node):
@@ -524,9 +530,10 @@ class WeldingRunner(Node):
         automatic=getattr(self.args,'orientation_mode','fixed')=='auto'
         tilt=getattr(self.args,'tilt',0.)
         direction=getattr(self.args,'tilt_direction',0.)
-        options=candidates(tilt,direction,self.args.max_tilt) if automatic else [(tilt,direction,0.)]
+        options=list(candidates(tilt,direction,self.args.max_tilt)) if automatic else [(tilt,direction,0.)]
         self.orientation_deadline=time.monotonic()+getattr(self.args,'orientation_timeout',120.) if automatic else None
         attempts=[]
+        planning_progress(self, 'search', total=len(options))
         try:
             for inclination,heading,roll in options:
                 if self.orientation_deadline is not None and time.monotonic()>=self.orientation_deadline:break
@@ -538,6 +545,7 @@ class WeldingRunner(Node):
                 try:
                     result=WeldingRunner.plan_fixed(self,candidate)
                     entry['status']='planned';attempts.append(entry)
+                    planning_progress(self, 'search', len(attempts), len(options), 1)
                     self.report['orientation_attempts']=attempts
                     self.report['chosen_orientation']=entry.copy()
                     self.planned_paths=candidate
@@ -547,6 +555,7 @@ class WeldingRunner(Node):
                     return result
                 except RuntimeError as error:
                     entry.update(status='failed',error=str(error));attempts.append(entry)
+                    planning_progress(self, 'search', len(attempts), len(options))
                     self.report['orientation_attempts']=attempts
                     if not automatic:raise
             self.report['orientation_attempts']=attempts
@@ -563,7 +572,7 @@ class WeldingRunner(Node):
         self.body_clearance = TableClearance(self.remote_parameter('move_group', 'robot_description'),
                                              self.profile, self.planning_floor)
         automatic=self.args.orientation_mode=='auto'
-        options=candidates(self.args.tilt,self.args.tilt_direction,self.args.max_tilt) if automatic else [(self.args.tilt,self.args.tilt_direction,0.)]*4
+        options=list(candidates(self.args.tilt,self.args.tilt_direction,self.args.max_tilt)) if automatic else [(self.args.tilt,self.args.tilt_direction,0.)]*4
         start=self.settled_state()
         self.optimization_start=deepcopy(start)
         values=dict(zip(start.joint_state.name,start.joint_state.position))
@@ -572,6 +581,7 @@ class WeldingRunner(Node):
         self.orientation_deadline=time.monotonic()+self.args.orientation_timeout
         attempts=[];best=None;successes=0
         self.descent_diagnostics = []
+        planning_progress(self, 'search', total=len(options))
         try:
             for tilt,direction,roll in options:
                 if time.monotonic()>=self.orientation_deadline or successes>=12:break
@@ -595,7 +605,7 @@ class WeldingRunner(Node):
                     entry.update(status='failed',error=str(error))
                     entry['stage_errors'] = self.report.get('stage_errors', [])
                 attempts.append(entry)
-                self.get_logger().info(f'Route comparison: {len(attempts)} attempts, {successes} complete candidates')
+                planning_progress(self, 'search', len(attempts), len(options), successes)
         finally:
             self.display=publisher;self.optimization_start=None;self.orientation_deadline=None
         if best is None:
@@ -643,9 +653,12 @@ class WeldingRunner(Node):
         self.check_world_collisions_enabled(scene)
         self.get_logger().info('Planning whole-body collision validation for the selected route')
         state = start
-        for name, trajectory in best['stages']:
+        total = len(best['stages'])
+        planning_progress(self, 'verify', total=total)
+        for completed, (name, trajectory) in enumerate(best['stages'], start=1):
             self.check_body_path(name, trajectory, state.joint_state)
             state = self.end_state(state, trajectory)
+            planning_progress(self, 'verify', completed, total)
         publisher.publish(DisplayTrajectory(model_id=self.profile.model,trajectory_start=start,trajectory=[t for _,t in best['stages']]))
         return best['stages']
 
@@ -1019,7 +1032,10 @@ def main(runner_type=None):
     node = (runner_type or WeldingRunner)(args)
     node.report['planning_source']='moveit_scene' if args.use_scene_workpiece else 'scan_receipt' if args.scan_report else 'default_scene'
     code = 0
+    lifetime = ExitStack()
     try:
+        if args.mode == "execute" and profile_of(node).real:
+            lifetime.enter_context(welding_operation())
         edges = node.read_object()
         geometry = node.geometry
         node.report['shape'] = geometry.shape
@@ -1063,6 +1079,7 @@ def main(runner_type=None):
                 rclpy.spin(node)
         else:
             stages = node.plan(paths)
+            planning_progress(node, 'ready', 1, 1)
             if args.mode == "execute":
                 node.execute(stages)
             node.get_logger().info(f"Welding operation {node.report['status']}")
@@ -1085,6 +1102,7 @@ def main(runner_type=None):
         capture = getattr(node, 'feedback_capture', None)
         if capture is not None:
             capture.close()
+        lifetime.close()
         if not args.list:
             directory = Path(args.output)
             directory.mkdir(parents=True, exist_ok=True)

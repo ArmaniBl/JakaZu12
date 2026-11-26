@@ -10,7 +10,7 @@ function renderScanProgress(){
   const data=state?.scan_progress,bar=$('scan-progress'),label=$('scan-phase'),duration=$('scan-duration');
   const fresh=data&&Number.isFinite(data.observed_unix)&&Date.now()/1000-data.observed_unix<25;
   const phase=fresh?data.state:'UNAVAILABLE';
-  const labels={WAITING:'Ожидание сканирования',CAPTURING:'Захват кадров',DECODING:'Восстановление облака',COMPLETE:'Сканирование завершено',COMPLETED:'Сканирование завершено',FAILED:'Ошибка сканирования',CANCELLED:'Сканирование отменено',UNAVAILABLE:'Нет связи со сканером',PLANNING:'Сканер занят: планирование',COMPARING:'Сканер занят: сравнение'};
+  const labels={PAUSED_MOTION:'Пауза до конца операции робота',WAITING:'Ожидание сканирования',CAPTURING:'Захват кадров',DECODING:'Восстановление облака',COMPLETE:'Сканирование завершено',COMPLETED:'Сканирование завершено',FAILED:'Ошибка сканирования',CANCELLED:'Сканирование отменено',UNAVAILABLE:'Нет связи со сканером',PLANNING:'Сканер занят: планирование',COMPARING:'Сканер занят: сравнение'};
   label.textContent=labels[phase]||'Сканер готов';
   bar.removeAttribute('value');bar.hidden=!['CAPTURING','DECODING'].includes(phase);
   if(phase==='CAPTURING'&&Number.isFinite(data.percent)){
