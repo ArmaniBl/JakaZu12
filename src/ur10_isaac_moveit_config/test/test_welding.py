@@ -1,5 +1,6 @@
 """Geometry invariants and rejection of incomplete Cartesian plans."""
 import math
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -72,6 +73,21 @@ class GeometryTests(unittest.TestCase):
                                report={}, call=lambda *args: result)
         with self.assertRaisesRegex(RuntimeError, "Incomplete Cartesian path"):
             WeldingRunner.cartesian(stub, RobotState(), [])
+
+    def test_retries_near_complete_cartesian_plan_with_finer_interpolation(self):
+        steps = []
+        def call(_, name, request):
+            self.assertTrue(request.avoid_collisions)
+            steps.append(request.max_step)
+            result = GetCartesianPath.Response()
+            result.error_code.val = 1
+            result.fraction = .9 if len(steps) == 1 else 1.
+            return result
+        stub = SimpleNamespace(args=SimpleNamespace(step=.005, scaling=.05, speed=.02),
+                               orientation_deadline=time.monotonic()+10, report={}, call=call)
+        WeldingRunner.cartesian(stub, RobotState(), [Pose()], retime=False)
+        self.assertEqual(steps, [.005,.0025])
+        self.assertEqual(stub.report['last_cartesian_fraction'], 1.)
 
     def test_face_contour_is_closed_and_visits_all_corners(self):
         contour = face_contour(self.edges, "z_plus")

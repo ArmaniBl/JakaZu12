@@ -18,10 +18,10 @@ import numpy as np
 
 from .geometry import FACES, face_contour, select_edges
 from .geometry import WorkpieceGeometry
-from .profiles import ISAAC
+from .profiles import ISAAC, JAKA
 from .orientation import tilted_orientation
-from .table_limits import JAKA_TABLE_TOP_M
-from .workpiece_model import preview_object, WORKPIECE_CATALOG, CATALOG_PREFIX
+from .table_limits import DEFAULT_WORKPIECE_CELL, JAKA_TABLE_TOP_M
+from .workpiece_model import startup_workpiece, WORKPIECE_CATALOG, CATALOG_PREFIX
 
 
 @dataclass(frozen=True)
@@ -41,7 +41,7 @@ class Settings:
     orientation_mode: str = 'auto'
     tilt: float = 0.0
     tilt_direction: float = 0.0
-    max_tilt: float = 45.0
+    max_tilt: float = 60.0
     orientation_timeout: float = 120.0
 
     @classmethod
@@ -181,6 +181,7 @@ class Controller:
         self.workcell_objects = []
         self.workcell_revision = 0
         self.animation_pose = None
+        self.workcell_pose = self.telemetry["robot"]
         self.last_workcell_pose = None
         self.last_telemetry = 0.0
         self.report_root = self.workspace / "diagnostics" / "web"
@@ -210,6 +211,7 @@ class Controller:
                     "logs": [entry for entry in self.logs if entry["seq"] > since], "sequence": self.sequence}
 
     def geometry(self, settings):
+        welding_profile = self.profile if self.profile.real else JAKA
         with self.lock:
             live = self.object_edges.get(settings.object)
             generation = self.scene_generation
@@ -217,7 +219,7 @@ class Controller:
             scene_received = self.scene_received or generation > 0
             current = self.telemetry['moveit'] and time.monotonic() - self.last_telemetry <= 4
         if live is not None:
-            result = geometry_payload(live, settings, profile=self.profile)
+            result = geometry_payload(live, settings, profile=welding_profile)
             result.update(source='moveit' if current else 'last_moveit', scene_generation=generation,
                           object_id=settings.object, preset=preset)
             return result
@@ -231,14 +233,12 @@ class Controller:
                 cached=getattr(self,'cached_cad_geometry',None)
                 if cached is None or cached[0]!=stamp:
                     model=json.loads(path.read_text())
-                    preview = preview_object(model)
-                    if self.profile.real:
-                        preview.pose.position.z += JAKA_TABLE_TOP_M
+                    preview = startup_workpiece(model, JAKA_TABLE_TOP_M if self.profile.real else 0.)
                     edges = object_geometry(preview, self.profile.frame)
                     self.cached_cad_geometry=(stamp,model,edges)
                 else:
                     _,model,edges=cached
-                result=geometry_payload(edges, settings, demo=True, profile=self.profile)
+                result=geometry_payload(edges, settings, demo=True, profile=welding_profile)
                 result.update(source='cached_cad',part_name=model['part_name'])
                 return result
         return {'source': 'awaiting_scene', 'scene_generation': generation}
@@ -291,6 +291,9 @@ class Controller:
                                 else "succeeded" if code == 0 and report and report.get("status") in ("preview", "planned", "executed")
                                 else "failed")
                 job["phase"] = {"cancelled": "Остановлено", "succeeded": "Готово", "failed": "Ошибка процесса"}[job["state"]]
+                if (job["state"] == "succeeded" and report
+                        and report.get('replay', {}).get('status') == 'blocked'):
+                    job["phase"] = "План JAKA готов · повтор UR10 заблокирован"
             else:
                 self.scene_stopping = False
         self.log(source, f"Процесс завершён, код {code}")
@@ -376,6 +379,10 @@ class Controller:
             with self.lock:
                 if not self.status()['health']['moveit']:
                     raise ValueError('Сначала запустите сцену MoveIt/RViz')
+                table = next((obj for obj in self.workcell_objects if obj['id'] == 'floor'), None)
+                table_top = JAKA_TABLE_TOP_M if self.profile.real else 0.
+                if table is not None and not self.profile.real:
+                    table_top = table['position'][2] + table['size'][2] / 2
                 current = self.job_process
                 if current and current.poll() is None:
                     if self.job['mode'] != 'preview':
@@ -386,9 +393,8 @@ class Controller:
                     current.wait(timeout=8)
                 except subprocess.TimeoutExpired:
                     raise ValueError('Предпросмотр ещё останавливается') from None
-            center = ('-0.225', '-0.74', str(JAKA_TABLE_TOP_M)) if self.profile.real else ('-1', '0', '0')
             argv = [sys.executable, str(self.executable.with_name('add_workpiece.py')),
-                    '--id', object_id, '--frame', self.profile.frame, '--center', *center,
+                    '--id', object_id, '--frame', self.profile.frame, '--table-top', str(table_top),
                     '--clear-markers', '--catalog-model', catalog]
             if self.profile.real:
                 argv += ['--require-jaka-idle']
@@ -418,7 +424,7 @@ class Controller:
                 generation = self.scene_generation
                 self.object_edges.pop(object_id, None)
                 self.telemetry['objects'] = [o for o in self.telemetry['objects'] if o['id'] != object_id]
-            self.log('scene', f'Заготовка {object_id} заменена: {shape}, позиция ({", ".join(center)}) м')
+            self.log('scene', f'Заготовка {object_id} заменена: {shape}, ячейка {DEFAULT_WORKPIECE_CELL}')
             return {'object': object_id, 'shape': shape, 'scene_generation': generation}
 
     def scene(self, start, rviz=True):

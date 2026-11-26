@@ -1,0 +1,567 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="welding_torch" params="parent">
+    <link name="welding_torch_link">
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch_isaac/visual_0.stl" />
+        </geometry>
+        <material name="torch_color_0">
+          <color rgba="0.006000000052154064 0.00800000037997961 0.009999999776482582 1.0" />
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch/visual_1.stl" />
+        </geometry>
+        <material name="torch_color_1">
+          <color rgba="0.012000000104308128 0.014999999664723873 0.01899999938905239 1.0" />
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch/visual_2.stl" />
+        </geometry>
+        <material name="torch_color_2">
+          <color rgba="0.014000000432133675 0.01600000075995922 0.01899999938905239 1.0" />
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch_isaac/visual_3.stl" />
+        </geometry>
+        <material name="torch_color_3">
+          <color rgba="0.014999999664723873 0.017999999225139618 0.023000000044703484 1.0" />
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch_isaac/visual_4.stl" />
+        </geometry>
+        <material name="torch_color_4">
+          <color rgba="0.017999999225139618 0.02199999988079071 0.027000000700354576 1.0" />
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch_isaac/visual_5.stl" />
+        </geometry>
+        <material name="torch_color_5">
+          <color rgba="0.020999999716877937 0.02500000037252903 0.029999999329447746 1.0" />
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch_isaac/visual_6.stl" />
+        </geometry>
+        <material name="torch_color_6">
+          <color rgba="0.02800000086426735 0.03099999949336052 0.035999998450279236 1.0" />
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch_isaac/visual_7.stl" />
+        </geometry>
+        <material name="torch_color_7">
+          <color rgba="0.47999998927116394 0.5400000214576721 0.5899999737739563 1.0" />
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch_isaac/visual_8.stl" />
+        </geometry>
+        <material name="torch_color_8">
+          <color rgba="0.5699999928474426 0.25 0.0949999988079071 1.0" />
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch_isaac/visual_9.stl" />
+        </geometry>
+        <material name="torch_color_9">
+          <color rgba="0.6499999761581421 0.013000000268220901 0.019999999552965164 1.0" />
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="package://ur10_isaac_moveit_config/meshes/torch_isaac/visual_10.stl" />
+        </geometry>
+        <material name="torch_color_10">
+          <color rgba="0.6800000071525574 0.7200000286102295 0.75 1.0" />
+        </material>
+      </visual>
+      <inertial>
+        <origin xyz="-0.01519793232651902 -0.002151103314400024 0.1507232702360932" rpy="0 0 0" />
+        <mass value="1.2735342867923563" />
+        <inertia ixx="0.021720790151532336" iyy="0.004782973230613556" izz="0.017923795358867598" ixy="-1.2547973071127222e-06" ixz="0.0002576412487622979" iyz="0.0007381037140399556" />
+      </inertial>
+      <collision name="cad_part_0">
+        <origin xyz="-0.018 -0.2406047284603119 0.11722771325521167" rpy="0 0 0" />
+        <geometry>
+          <box size="0.01899999922513962 0.250209463596344 0.157662913504988" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_1">
+        <origin xyz="-0.018000000000000002 -0.0019999966025352756 0.18641102677583699" rpy="0 0 0" />
+        <geometry>
+          <box size="0.04700000008940697 0.2290000001192093 0.041015622973442106" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_2">
+        <origin xyz="0.0 0.0 0.03150000050663948" rpy="0 0 0" />
+        <geometry>
+          <box size="0.06793333387374878 0.06793333387374878 0.06400000101327896" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_3">
+        <origin xyz="-0.01799988079071045 -0.17351050302386287 0.18641105285286902" rpy="0 0 0" />
+        <geometry>
+          <box size="0.03199975548684597 0.10645439273118973 0.03199995106458664" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_4">
+        <origin xyz="-0.018 0.20918764173984525 0.12570354519784455" rpy="0 0 0" />
+        <geometry>
+          <box size="0.025000000208616258 0.057952327489852906 0.06238956919312477" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_5">
+        <origin xyz="0.018000000312924386 -2.7755575615628914e-17 0.17500000438094138" rpy="0 0 0" />
+        <geometry>
+          <box size="0.008999997586011887 0.09700000083446504 0.10300000554323196" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_6">
+        <origin xyz="-0.018 -2.0816681711721685e-17 0.08450264009088279" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.06900000369548798 0.11199471338093282" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_7">
+        <origin xyz="-0.018 0.1539395749568939 0.16894108420610432" rpy="0 0 0" />
+        <geometry>
+          <box size="0.016600000508129598 0.08487914299964905 0.05153989589214325" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_8">
+        <origin xyz="-0.05400000031292439 -2.42861286636753e-17 0.15300000450015067" rpy="0 0 0" />
+        <geometry>
+          <box size="0.008999997586011887 0.09300000017881394 0.059000005781650544" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_9">
+        <origin xyz="-0.018 -0.1734999977052212 0.1864110267758369" rpy="0 0 0" />
+        <geometry>
+          <box size="0.020999999552965165 0.10800000077486038 0.020999995827674922" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_10">
+        <origin xyz="0.006000001139938833 -3.8163916471489756e-17 0.2109999991059303" rpy="0 0 0" />
+        <geometry>
+          <box size="0.017000000759959222 0.09300000017881394 0.026995030999183656" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_11">
+        <origin xyz="-0.04375084660202265 -3.469446951953614e-17 0.19637903189659117" rpy="0 0 0" />
+        <geometry>
+          <box size="0.021000001415610314 0.09300000017881394 0.0179999897480011" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_12">
+        <origin xyz="-0.04200000090710819 -3.9898639947466563e-17 0.21887903279066084" rpy="0 0 0" />
+        <geometry>
+          <box size="0.035950001630932094 0.03594999930262566 0.02299999988079071" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_13">
+        <origin xyz="-0.04200000113993883 -2.7755575615628914e-17 0.17400000235438345" rpy="0 0 0" />
+        <geometry>
+          <box size="0.017000000759959222 0.09300000017881394 0.017000010073184968" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_14">
+        <origin xyz="0.006000001139938833 -2.7755575615628914e-17 0.17400000235438345" rpy="0 0 0" />
+        <geometry>
+          <box size="0.017000000759959222 0.09300000017881394 0.017000010073184968" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_15">
+        <origin xyz="-0.016625446110963824 -0.05299999937415127 0.20848820722103117" rpy="0 0 0" />
+        <geometry>
+          <box size="0.07025064325332642 0.009000001311302193 0.04121596908569336" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_16">
+        <origin xyz="-0.016625446110963824 0.05299999937415119 0.20848820722103117" rpy="0 0 0" />
+        <geometry>
+          <box size="0.07025064325332642 0.009000001311302193 0.04121596908569336" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_17">
+        <origin xyz="-0.018 -0.12500000000000003 0.18641102677583693" rpy="0 0 0" />
+        <geometry>
+          <box size="0.023600000724196435 0.02600000596046448 0.02360001003742218" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_18">
+        <origin xyz="-0.011999999016523363 0.025999999605119208 0.13199999919533728" rpy="0 0 0" />
+        <geometry>
+          <box size="0.10699999874830246 0.010999999776482583 0.010999997913837434" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_19">
+        <origin xyz="-0.011999999016523363 -0.02599999960511925 0.13199999919533728" rpy="0 0 0" />
+        <geometry>
+          <box size="0.10699999874830246 0.010999999776482583 0.010999997913837434" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_20">
+        <origin xyz="-0.018 0.08349999971687791 0.16441103434562687" rpy="0 0 0" />
+        <geometry>
+          <box size="0.015000000432133676 0.045999998062849046 0.0170000026226044" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_21">
+        <origin xyz="-0.018 0.1892612129449844 0.14945091670751576" rpy="0 0 0" />
+        <geometry>
+          <box size="0.020999999552965165 0.02403433418273926 0.02304829454421997" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_22">
+        <origin xyz="-0.027499999850988388 0.0 0.046000001952052116" rpy="0 0 0" />
+        <geometry>
+          <box size="0.007999999284744264 0.036988811403512956 0.037000002175569535" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_23">
+        <origin xyz="-0.018 0.189904011785984 0.14868487781286244" rpy="0 0 0" />
+        <geometry>
+          <box size="0.02560000105202198 0.0206160227060318 0.017731828451156617" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_24">
+        <origin xyz="-0.018 0.19247516244649884 0.14562069988250737" rpy="0 0 0" />
+        <geometry>
+          <box size="0.02560000105202198 0.0206160227060318 0.017731828451156617" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_25">
+        <origin xyz="-0.018 0.19504631310701367 0.142556518226862" rpy="0 0 0" />
+        <geometry>
+          <box size="0.02560000105202198 0.0206160227060318 0.01773182100057602" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_26">
+        <origin xyz="-0.041999999277293684 -3.9898639947466563e-17 0.1972790210545063" rpy="0 0 0" />
+        <geometry>
+          <box size="0.01254700480401516 0.010999999776482583 0.06500000303983688" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_27">
+        <origin xyz="0.006000000208616258 -4.163336342344337e-17 0.21599999433755876" rpy="0 0 0" />
+        <geometry>
+          <box size="0.00700000098347664 0.13099999523162842 0.006999997258186397" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_28">
+        <origin xyz="-0.03650000070407987 -0.02599999960511925 0.13200000292062758" rpy="0 0 0" />
+        <geometry>
+          <box size="0.028000001631677155 0.015000000432133676 0.014995647430419923" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_29">
+        <origin xyz="-0.03650000070407987 0.025999999605119208 0.13200000292062758" rpy="0 0 0" />
+        <geometry>
+          <box size="0.028000001631677155 0.015000000432133676 0.014995647430419923" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_30">
+        <origin xyz="0.0005000007040798678 -0.02599999960511925 0.13200000292062758" rpy="0 0 0" />
+        <geometry>
+          <box size="0.02800000163167715 0.015000000432133676 0.014995647430419923" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_31">
+        <origin xyz="0.0005000007040798678 0.025999999605119208 0.13200000292062758" rpy="0 0 0" />
+        <geometry>
+          <box size="0.02800000163167715 0.015000000432133676 0.014995647430419923" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_32">
+        <origin xyz="-0.04729033525288105 0.1106036119163036 0.17886233693361286" rpy="0 0 0" />
+        <geometry>
+          <box size="0.021647551864385606 0.030903508722782136 0.006598917603492738" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_33">
+        <origin xyz="-0.0437508447393775 0.04850000143051145 0.19587903088331224" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.032000003218650826 0.011000005364418086" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_34">
+        <origin xyz="-0.0437508447393775 -0.0485000014305115 0.1958790308833122" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.03200000321865081 0.01100000536441803" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_35">
+        <origin xyz="0.013499999575316907 0.0380000006407499 0.2060000038743019" rpy="0 0 0" />
+        <geometry>
+          <box size="0.03199999763071537 0.011000001639127732 0.01100000536441803" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_36">
+        <origin xyz="0.013499999575316907 -0.038000000640749966 0.2060000038743019" rpy="0 0 0" />
+        <geometry>
+          <box size="0.03199999763071537 0.011000001639127732 0.01100000536441803" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_37">
+        <origin xyz="-0.04949999957531691 -0.03800000064074996 0.17400000235438345" rpy="0 0 0" />
+        <geometry>
+          <box size="0.03199999763071537 0.011000001639127732 0.010999997913837434" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_38">
+        <origin xyz="0.013499999575316907 -0.03800000064074996 0.17400000235438345" rpy="0 0 0" />
+        <geometry>
+          <box size="0.03199999763071537 0.011000001639127732 0.010999997913837434" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_39">
+        <origin xyz="-0.04949999957531691 0.038000000640749904 0.17400000235438345" rpy="0 0 0" />
+        <geometry>
+          <box size="0.03199999763071537 0.011000001639127732 0.010999997913837406" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_40">
+        <origin xyz="0.013499999575316907 0.038000000640749904 0.17400000235438345" rpy="0 0 0" />
+        <geometry>
+          <box size="0.03199999763071537 0.011000001639127732 0.010999997913837406" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_41">
+        <origin xyz="0.017677669413387775 -0.017677669413387775 0.003000000026077032" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.010999999776482583 0.019000000156462193" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_42">
+        <origin xyz="-0.017677669413387775 -0.017677669413387775 0.003000000026077032" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.010999999776482583 0.019000000156462193" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_43">
+        <origin xyz="-0.017677669413387775 0.017677669413387775 0.003000000026077032" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.010999999776482583 0.019000000156462193" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_44">
+        <origin xyz="0.017677669413387775 0.017677669413387775 0.003000000026077032" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.010999999776482583 0.019000000156462193" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_45">
+        <origin xyz="-0.04199999974295497 -3.5561831257524545e-17 0.2063790298104286" rpy="0 0 0" />
+        <geometry>
+          <box size="0.020993782974779607 0.020999999552965165 0.004000006079673768" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_46">
+        <origin xyz="0.0059999992772936835 0.06100000068545337 0.21600000178813936" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.007000004708766938 0.012546999216079768" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_47">
+        <origin xyz="0.0059999992772936835 -0.06100000068545346 0.21600000178813933" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.007000004708766945 0.012546999216079713" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_48">
+        <origin xyz="0.025999999761581422 -0.02599999960511925 0.13199999919533728" rpy="0 0 0" />
+        <geometry>
+          <box size="0.006999997258186341 0.010999999776482586 0.01254700666666031" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_49">
+        <origin xyz="0.025999999761581422 0.025999999605119208 0.13199999919533728" rpy="0 0 0" />
+        <geometry>
+          <box size="0.006999997258186341 0.010999999776482583 0.01254700666666031" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_50">
+        <origin xyz="0.0059999992772936835 0.04749999940395351 0.21600000178813933" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.003999998629093178 0.010999990463256837" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_51">
+        <origin xyz="0.0059999992772936835 -0.047499999403953594 0.21600000178813933" rpy="0 0 0" />
+        <geometry>
+          <box size="0.010999999776482583 0.003999998629093178 0.010999990463256837" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_52">
+        <origin xyz="-0.05850000011920929 0.026000000536441782 0.13199999919533728" rpy="0 0 0" />
+        <geometry>
+          <box size="0.0020000020265579233 0.013000001966953278 0.013000001966953278" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_53">
+        <origin xyz="0.02250000011920929 0.026000000536441782 0.13199999919533728" rpy="0 0 0" />
+        <geometry>
+          <box size="0.0020000020265579233 0.013000001966953278 0.013000001966953278" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_54">
+        <origin xyz="-0.05850000011920929 -0.026000000536441824 0.13199999919533728" rpy="0 0 0" />
+        <geometry>
+          <box size="0.0020000020265579233 0.013000001966953278 0.013000001966953278" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_55">
+        <origin xyz="0.02250000011920929 -0.026000000536441824 0.13199999919533728" rpy="0 0 0" />
+        <geometry>
+          <box size="0.0020000020265579233 0.013000001966953278 0.013000001966953278" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_56">
+        <origin xyz="-0.05850000011920929 -0.03800000064074996 0.17400000235438345" rpy="0 0 0" />
+        <geometry>
+          <box size="0.0020000020265579233 0.01299999824166298 0.013000001966953278" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_57">
+        <origin xyz="0.02250000011920929 -0.03800000064074996 0.17400000235438345" rpy="0 0 0" />
+        <geometry>
+          <box size="0.0020000020265579233 0.01299999824166298 0.013000001966953278" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_58">
+        <origin xyz="-0.05850000011920929 0.038000000640749904 0.17400000235438345" rpy="0 0 0" />
+        <geometry>
+          <box size="0.0020000020265579233 0.01299999824166298 0.01300000196695325" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_59">
+        <origin xyz="0.02250000011920929 0.038000000640749904 0.17400000235438345" rpy="0 0 0" />
+        <geometry>
+          <box size="0.0020000020265579233 0.01299999824166298 0.01300000196695325" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_60">
+        <origin xyz="0.02250000011920929 0.0380000006407499 0.2059999964237213" rpy="0 0 0" />
+        <geometry>
+          <box size="0.0020000020265579233 0.01299999824166298 0.012999994516372682" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_61">
+        <origin xyz="0.02250000011920929 -0.038000000640749966 0.2059999964237213" rpy="0 0 0" />
+        <geometry>
+          <box size="0.0020000020265579233 0.01299999824166298 0.012999994516372682" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_62">
+        <origin xyz="-0.043750845670700075 0.0574999991804361 0.1958790308833122" rpy="0 0 0" />
+        <geometry>
+          <box size="0.013000001966953278 0.001999998301267625 0.013000009417533875" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_63">
+        <origin xyz="-0.043750845670700075 -0.05749999918043617 0.1958790308833122" rpy="0 0 0" />
+        <geometry>
+          <box size="0.013000001966953278 0.001999998301267625 0.013000009417533875" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_64">
+        <origin xyz="0.0059999992772936835 0.05749999918043609 0.21600000178813933" rpy="0 0 0" />
+        <geometry>
+          <box size="0.01300000010430813 0.0019999983012676317 0.012999994516372682" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_65">
+        <origin xyz="0.0059999992772936835 -0.057499999180436176 0.21600000178813933" rpy="0 0 0" />
+        <geometry>
+          <box size="0.01300000010430813 0.0019999983012676317 0.012999994516372682" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_66">
+        <origin xyz="-0.06501200127601624 0.038000000640749904 0.17399999862909316" rpy="0 0 0" />
+        <geometry>
+          <box size="0.001035002827644349 0.005330124706029893 0.006000010132789613" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_67">
+        <origin xyz="-0.06501200127601624 -0.03800000064074996 0.17399999862909316" rpy="0 0 0" />
+        <geometry>
+          <box size="0.001035002827644349 0.005330124706029893 0.006000010132789613" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_68">
+        <origin xyz="0.029012001276016237 0.038000000640749904 0.17399999862909316" rpy="0 0 0" />
+        <geometry>
+          <box size="0.001035002827644349 0.005330124706029893 0.006000010132789613" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_69">
+        <origin xyz="0.029012001276016237 -0.03800000064074996 0.17399999862909316" rpy="0 0 0" />
+        <geometry>
+          <box size="0.001035002827644349 0.005330124706029893 0.006000010132789613" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_70">
+        <origin xyz="-0.06501200127601624 0.026000000536441782 0.13199999919533728" rpy="0 0 0" />
+        <geometry>
+          <box size="0.001035002827644349 0.005330128431320195 0.006000002682209016" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_71">
+        <origin xyz="-0.06501200127601624 -0.026000000536441824 0.13199999919533728" rpy="0 0 0" />
+        <geometry>
+          <box size="0.001035002827644349 0.005330128431320195 0.006000002682209016" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_72">
+        <origin xyz="-0.0437508447393775 0.0640119984745979 0.19587902343273167" rpy="0 0 0" />
+        <geometry>
+          <box size="0.005330126568675042 0.001035002827644349 0.005999995231628419" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_73">
+        <origin xyz="-0.0437508447393775 -0.06401199847459796 0.1958790234327316" rpy="0 0 0" />
+        <geometry>
+          <box size="0.005330126568675042 0.001035002827644349 0.005999995231628419" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_74">
+        <origin xyz="0.029012001276016237 0.0380000006407499 0.2059999964237213" rpy="0 0 0" />
+        <geometry>
+          <box size="0.001035002827644349 0.005330124706029893 0.005999995231628419" />
+        </geometry>
+      </collision>
+      <collision name="cad_part_75">
+        <origin xyz="0.029012001276016237 -0.038000000640749966 0.2059999964237213" rpy="0 0 0" />
+        <geometry>
+          <box size="0.001035002827644349 0.005330124706029893 0.005999995231628419" />
+        </geometry>
+      </collision>
+    </link>
+    <joint name="tool0_torch_mount" type="fixed">
+      <parent link="${parent}" />
+      <child link="welding_torch_link" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+    <link name="welding_tcp" />
+    <joint name="torch_tcp_joint" type="fixed">
+      <parent link="welding_torch_link" />
+      <child link="welding_tcp" />
+      <origin xyz="-0.018 0.229114062985 0.101956156188" rpy="2.44346105075 9.70582262188e-08 -3.14159253792" />
+    </joint>
+  </xacro:macro>
+</robot>

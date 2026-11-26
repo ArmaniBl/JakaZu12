@@ -6,18 +6,19 @@ from pathlib import Path
 import tempfile
 
 
-def _path():
+def _path(scope="jaka"):
     domain = int(os.environ.get('ROS_DOMAIN_ID', '0'))
-    return Path(tempfile.gettempdir()) / f'jaka-welding-operation-{os.getuid()}-{domain}.lock'
+    return Path(tempfile.gettempdir()) / f'{scope}-welding-operation-{os.getuid()}-{domain}.lock'
 
 
 @contextmanager
-def welding_operation():
-    with _path().open('a') as lock:
+def welding_operation(scope="jaka"):
+    with _path(scope).open('a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise RuntimeError('Another real welding operation is already running') from None
+            label = 'real welding' if scope == "jaka" else 'Isaac replay'
+            raise RuntimeError(f'Another {label} operation is already running') from None
         yield
 
 

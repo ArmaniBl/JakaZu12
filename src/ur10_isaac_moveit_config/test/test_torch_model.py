@@ -27,8 +27,8 @@ class TorchModelTests(unittest.TestCase):
     def test_collision_and_profile_match_exported_tool(self):
         urdf=self.expand('ur10.urdf.xacro',True)
         link=urdf.find("link[@name='welding_torch_link']")
-        collision_info=json.loads((self.package/'config/torch_collision.json').read_text())
-        self.assertEqual(len(link.findall('collision')),collision_info['box_count'])
+        # The original Isaac asset has one more box than the long-tip JAKA tool.
+        self.assertEqual(len(link.findall('collision')),76)
         self.assertTrue(all(c.find('geometry/box') is not None for c in link.findall('collision')))
         path=self.package/'meshes/torch/collision.stl'
         data=path.read_bytes();count=struct.unpack('<I',data[80:84])[0]
@@ -63,6 +63,17 @@ class TorchModelTests(unittest.TestCase):
         self.assertAlmostEqual(xyz[1],.229114062985,places=10)
         self.assertAlmostEqual(xyz[2],.101956156188,places=10)
         self.assertEqual(origin.attrib, data['tcp_origin'])
+
+    def test_isaac_clearance_uses_its_own_moving_collision_geometry(self):
+        from welding_sim.environment import simulation_floor
+        from welding_sim.profiles import ISAAC
+        from welding_sim.table_clearance import TableClearance
+        robot = self.expand('ur10.urdf.xacro', True)
+        clearance = TableClearance(ET.tostring(robot), ISAAC, simulation_floor())
+        self.assertEqual(clearance.tabletop, 0.)
+        self.assertIn('welding_torch_link', clearance.shapes)
+        self.assertNotIn('base_link_inertia', clearance.shapes)
+        self.assertTrue(any(name == 'flange' for name, *_ in clearance.chain))
 
     def test_inertial_properties_match_simulation_estimate(self):
         data=json.loads((self.package/'config/torch_dynamics.json').read_text())

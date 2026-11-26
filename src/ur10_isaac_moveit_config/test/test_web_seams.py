@@ -8,7 +8,7 @@ import numpy as np
 from welding_sim.runner import object_geometry
 from welding_sim.workpiece_model import preview_object
 from welding_sim.web_control import Controller,Settings,geometry_payload
-from welding_sim.profiles import JAKA
+from welding_sim.profiles import ISAAC, JAKA
 
 ROOT=Path(__file__).resolve().parents[3]
 
@@ -71,16 +71,21 @@ class WebSeamTests(unittest.TestCase):
     def test_catalog_meshes_offer_only_complete_relevant_contours(self):
         directory = ROOT/'src/jaka_zu12_moveit_config/config/workpiece_models'
         for part, ids in (
-                ('02-tee-gusset', {'face_119', 'face_3', 'face_685', 'face_690', 'face_694', 'face_0', 'face_691'}),
-                ('04-pipe-plate', {'face_237', 'face_813', 'face_813_hole_1', 'seam_pipe_base'}),
+                ('02-tee-gusset', {
+                    'seam_tee_base_back', 'seam_tee_base_front_left', 'seam_tee_base_front_right',
+                    'seam_gusset_base_left', 'seam_gusset_base_right', 'seam_gusset_base_toe',
+                    'seam_gusset_web_left', 'seam_gusset_web_right', 'seam_gusset_web_top',
+                }),
+                ('04-pipe-plate', {'seam_pipe_base'}),
                 ('05-wave-butt', {'seam_center'})):
             with self.subTest(part=part):
                 model = json.loads((directory/f'{part}.json').read_text())
                 obj = preview_object(model)
                 obj.type.key = f'cad:{part}'
                 geometry = object_geometry(obj)
-                payload = geometry_payload(geometry, Settings(selection='edge'))
-                self.assertEqual({seam['id'] for seam in payload['seams']}, ids)
+                for profile in (ISAAC, JAKA):
+                    payload = geometry_payload(geometry, Settings(selection='edge'), profile=profile)
+                    self.assertEqual({seam['id'] for seam in payload['seams']}, ids)
                 self.assertEqual(payload['edges'], [])
                 self.assertGreater(len(payload['faces']), len(ids))
                 self.assertGreater(len(payload['tool']), 1)
@@ -95,21 +100,29 @@ class WebSeamTests(unittest.TestCase):
                             controller.start('preview', settings)
                     launch.assert_not_called()
 
-    def test_gusset_faces_are_individually_selectable(self):
+    def test_gusset_routes_follow_joint_lines_and_skip_the_covered_wall_span(self):
         path = ROOT/'src/jaka_zu12_moveit_config/config/workpiece_models/02-tee-gusset.json'
-        obj = preview_object(json.loads(path.read_text()))
+        model = json.loads(path.read_text())
+        model['initial_pose']['position_m'] = [0., 0., 0.]
+        obj = preview_object(model)
         obj.type.key = 'cad:02-tee-gusset'
         geometry = object_geometry(obj)
-        for face, normal in (
-                ('face_694', [0., 1/np.sqrt(2), 1/np.sqrt(2)]),
-                ('face_0', [-1., 0., 0.]),
-                ('face_691', [1., 0., 0.])):
-            with self.subTest(face=face):
-                payload = geometry_payload(geometry, Settings(face=face))
-                self.assertEqual(payload['selected_face'], face)
-                self.assertEqual(payload['selected_surface'], face)
-                np.testing.assert_allclose(payload['normal'], normal, atol=1e-7)
-                np.testing.assert_allclose(payload['seam'][0], payload['seam'][-1])
+        obj.type.db = ''  # Scene loaded before the gusset contained authored seams.
+        self.assertEqual(object_geometry(obj).selectable_seams, geometry.selectable_seams)
+
+        endpoints = {
+            'seam_tee_base_front_left': [[-100, 3, 7], [70, 3, 7]],
+            'seam_tee_base_front_right': [[78, 3, 7], [100, 3, 7]],
+            'seam_gusset_base_left': [[70, 3, 7], [70, 42, 7]],
+            'seam_gusset_web_right': [[78, 3, 8], [78, 3, 47]],
+        }
+        for name, expected in endpoints.items():
+            with self.subTest(seam=name):
+                payload = geometry_payload(geometry, Settings(face=name, offset=.008))
+                self.assertEqual(payload['selected_face'], name)
+                seam, tool = np.array(payload['seam']), np.array(payload['tool'])
+                np.testing.assert_allclose(seam[[0,-1]] * 1000, expected)
+                np.testing.assert_allclose(np.linalg.norm(tool-seam, axis=1), .008)
 
     def test_pipe_joint_is_closed_and_offset_away_from_both_surfaces(self):
         path = ROOT/'src/jaka_zu12_moveit_config/config/workpiece_models/04-pipe-plate.json'

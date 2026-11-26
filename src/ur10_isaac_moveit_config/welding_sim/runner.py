@@ -31,16 +31,22 @@ from .geometry import quaternion, rotation
 from .robot_view import EXECUTION_DISPLAY_TOPIC
 from .return_pose import load_return_pose
 from .profiles import ISAAC, load_profile
-from .orientation import tilted_orientation, candidates
+from .orientation import (
+    aimed_orientations, candidates, orbit_orientations, pipe_plate_orientations, radial_orientations, route_candidates,
+    standoff_orientations, swept_orientations, tilted_orientation,
+)
 from .workpiece_model import PREVIEW_TYPE
 from .geometry import box_geometry, cylinder_geometry, mesh_geometry
 from .probing import probe_contacts
 from .table_clearance import JOINT_SAMPLE_RAD, TABLE_CLEARANCE_M, TableClearance
+from .isaac_feedback import IsaacFeedbackCapture
 from .jaka_feedback import FeedbackCapture
 from .operation_lock import welding_operation
 
 PROBE_SPEED_M_S = .01
 PROBE_STANDOFF_M = .008
+CLOSE_WELD_OFFSET_M = .015
+CLOSE_PROBE_APPROACH_M = .020
 
 
 def pose_message(position, orientation):
@@ -114,6 +120,7 @@ class WeldingRunner(Node):
         self.service_clients = {}
         self.active_goal = None
         self.body_clearance = None
+        self.lift_after_weld = True
         self.feedback_capture = None
         self.cartesian_targets = {}
         self.joint_targets = {}
@@ -127,6 +134,8 @@ class WeldingRunner(Node):
                 and all(math.isfinite(p) for p in message.position)):
             self.latest_state = message
             self.received_at = time.monotonic()
+            if isinstance(self.feedback_capture, IsaacFeedbackCapture):
+                self.feedback_capture.record(message)
 
     def call(self, service, name, request, timeout=30.0):
         if name not in self.service_clients:
@@ -280,15 +289,6 @@ class WeldingRunner(Node):
             values = edge.vertices if hasattr(edge, 'vertices') else (edge.start, edge.end)
             marker.points = [Point(x=float(p[0]), y=float(p[1]), z=float(p[2])) for p in values]
             messages.append(marker)
-            label = deepcopy(marker)
-            label.ns = "labels"
-            label.type = Marker.TEXT_VIEW_FACING
-            label.points = []
-            label.scale.z = 0.022
-            label.text = edge.id
-            mid = (edge.start + edge.end)/2 + edge.outward * 0.025
-            label.pose = pose_message(mid, [0, 0, 0, 1])
-            messages.append(label)
         for edge, seam, points, q in paths:
             for namespace, values, color in (
                     ("selected_seam", seam, (1.0, 0.1, 0.1)),
@@ -322,10 +322,10 @@ class WeldingRunner(Node):
                 messages.append(label)
         self.markers.publish(MarkerArray(markers=messages))
 
-    def approach(self, state, position, orientation, seed=None):
+    def inverse_kinematics(self, state, position, orientation):
         ik = GetPositionIK.Request()
         ik.ik_request.group_name = profile_of(self).group
-        ik.ik_request.robot_state = state if seed is None else seed
+        ik.ik_request.robot_state = state
         ik.ik_request.ik_link_name = profile_of(self).tip
         ik.ik_request.pose_stamped.header.frame_id = profile_of(self).frame
         ik.ik_request.pose_stamped.pose = pose_message(position, orientation)
@@ -337,8 +337,13 @@ class WeldingRunner(Node):
         solution = self.call(GetPositionIK, "/compute_ik", ik)
         if solution.error_code.val != 1:
             raise RuntimeError(f"Approach IK failed ({solution.error_code.val}); change edge, offset or --roll")
-        return self.joint_motion(state, dict(zip(solution.solution.joint_state.name,
-                                                solution.solution.joint_state.position)))
+        result = deepcopy(state)
+        result.joint_state = solution.solution.joint_state
+        return result
+
+    def approach(self, state, position, orientation, seed=None):
+        target = self.inverse_kinematics(state if seed is None else seed, position, orientation)
+        return self.joint_motion(state, dict(zip(target.joint_state.name, target.joint_state.position)))
 
     def joint_motion(self, state, targets):
         request = GetMotionPlan.Request()
@@ -366,7 +371,7 @@ class WeldingRunner(Node):
             raise RuntimeError(f"Collision-free joint-motion planning failed ({result.error_code.val})")
         return result.trajectory
 
-    def cartesian(self, state, waypoints, *, speed_limit=None, level_z=None):
+    def cartesian(self, state, waypoints, *, speed_limit=None, level_z=None, retime=True):
         speed = self.args.speed if speed_limit is None else min(self.args.speed, speed_limit)
         request = GetCartesianPath.Request()
         request.header.frame_id = profile_of(self).frame
@@ -383,10 +388,19 @@ class WeldingRunner(Node):
             request.cartesian_speed_limited_link = profile_of(self).tip
             request.max_cartesian_speed = speed
         result = self.call(GetCartesianPath, "/compute_cartesian_path", request)
+        deadline = getattr(self, 'orientation_deadline', None)
+        if (waypoints and result.error_code.val == 1 and .65 <= result.fraction < 1.0 - 1e-9
+                and request.max_step > .0025 and deadline is not None and time.monotonic() < deadline):
+            # Finer interpolation can retain the valid IK branch near a corner.
+            request.max_step = max(.0025, request.max_step / 2)
+            refined = self.call(GetCartesianPath, "/compute_cartesian_path", request)
+            if refined.error_code.val == 1 and refined.fraction > result.fraction:
+                result = refined
         self.report["last_cartesian_fraction"] = result.fraction
         if result.error_code.val != 1 or result.fraction < 1.0 - 1e-9:
             raise RuntimeError(f"Incomplete Cartesian path: {result.fraction:.1%}, code {result.error_code.val}. Nothing executed")
-        self.limit_cartesian_speed(state, result.solution, speed, level_z=level_z)
+        if retime:
+            self.limit_cartesian_speed(state, result.solution, speed, level_z=level_z)
         return result.solution
 
     def check_body_path(self, name, trajectory, initial):
@@ -433,13 +447,15 @@ class WeldingRunner(Node):
     def check_world_collisions_enabled(self, scene):
         objects = {obj.id for obj in scene.world.collision_objects}
         body = set(self.profile.frames)
+        support = 'Link_0' if self.profile.real else 'base_link_inertia'
+        body.add(support)
         matrix = scene.allowed_collision_matrix
         for name, enabled in zip(matrix.default_entry_names, matrix.default_entry_values):
             if enabled and name in (objects | body):
                 raise RuntimeError(f'MoveIt permits world collisions by default for {name}')
         for first, row in zip(matrix.entry_names, matrix.entry_values):
             for second, enabled in zip(matrix.entry_names, row.enabled):
-                if first != second and {first, second} == {'Link_0', 'floor'}:
+                if {first, second} == {support, 'floor'}:
                     continue  # Fixed mounting contact with the raised virtual support.
                 if enabled and ((first in body and second in objects) or (second in body and first in objects)):
                     raise RuntimeError(f'MoveIt permits a robot/object collision: {first} / {second}')
@@ -525,69 +541,68 @@ class WeldingRunner(Node):
         return result
 
     def plan(self, paths):
-        if profile_of(self).real:
-            return self.plan_best(paths)
-        automatic=getattr(self.args,'orientation_mode','fixed')=='auto'
-        tilt=getattr(self.args,'tilt',0.)
-        direction=getattr(self.args,'tilt_direction',0.)
-        options=list(candidates(tilt,direction,self.args.max_tilt)) if automatic else [(tilt,direction,0.)]
-        self.orientation_deadline=time.monotonic()+getattr(self.args,'orientation_timeout',120.) if automatic else None
-        attempts=[]
-        planning_progress(self, 'search', total=len(options))
-        try:
-            for inclination,heading,roll in options:
-                if self.orientation_deadline is not None and time.monotonic()>=self.orientation_deadline:break
-                candidate=[(edge,seam,points,tilted_orientation(q,inclination,heading,roll))
-                           for edge,seam,points,q in paths]
-                self.cartesian_targets={};self.joint_targets={}
-                entry={'tilt_deg':inclination,'direction_deg':heading,'roll_delta_deg':roll}
-                if automatic:self.get_logger().info(f'Orientation search: tilt={inclination:g}, direction={heading:g}, roll_delta={roll:g}')
-                try:
-                    result=WeldingRunner.plan_fixed(self,candidate)
-                    entry['status']='planned';attempts.append(entry)
-                    planning_progress(self, 'search', len(attempts), len(options), 1)
-                    self.report['orientation_attempts']=attempts
-                    self.report['chosen_orientation']=entry.copy()
-                    self.planned_paths=candidate
-                    for i,(_,_,_,q) in enumerate(candidate):
-                        if i<len(self.report.get('selection',[])):
-                            self.report['selection'][i]['orientation_xyzw']=q.tolist()
-                    return result
-                except RuntimeError as error:
-                    entry.update(status='failed',error=str(error));attempts.append(entry)
-                    planning_progress(self, 'search', len(attempts), len(options))
-                    self.report['orientation_attempts']=attempts
-                    if not automatic:raise
-            self.report['orientation_attempts']=attempts
-            raise RuntimeError(f'No complete collision-free route in {len(attempts)} orientation attempts. '
-                               'Inspect orientation_attempts; change tilt limit, workpiece placement or selected seam.')
-        finally:
-            self.orientation_deadline=None
+        return self.plan_best(paths)
 
     def plan_best(self,paths):
         from types import SimpleNamespace
         from .table_limits import require_walls
         from .path_quality import trajectory_quality
-        require_walls(self.initial_scene)
+        if self.profile.real:
+            require_walls(self.initial_scene)
         self.body_clearance = TableClearance(self.remote_parameter('move_group', 'robot_description'),
                                              self.profile, self.planning_floor)
         automatic=self.args.orientation_mode=='auto'
-        options=list(candidates(self.args.tilt,self.args.tilt_direction,self.args.max_tilt)) if automatic else [(self.args.tilt,self.args.tilt_direction,0.)]*4
+        options=list(candidates(self.args.tilt,self.args.tilt_direction,self.args.max_tilt)) if automatic else [(self.args.tilt,self.args.tilt_direction,0.)]*(4 if self.profile.real else 1)
         start=self.settled_state()
         self.optimization_start=deepcopy(start)
         values=dict(zip(start.joint_state.name,start.joint_state.position))
         original=deepcopy(self.report);publisher=self.display
         self.display=SimpleNamespace(publish=lambda _:None)
         self.orientation_deadline=time.monotonic()+self.args.orientation_timeout
-        attempts=[];best=None;successes=0
+        attempts=[];complete=[]
         self.descent_diagnostics = []
-        planning_progress(self, 'search', total=len(options))
+        probes_requested = any(getattr(self.args, flag, False) for flag in ('probe', 'probe_standoff'))
+        has_probe_contacts = any(item.get('probe_contacts') for item in original.get('selection', []))
+        allow_reordering = automatic and not (probes_requested and has_probe_contacts)
+        search = route_candidates(
+            paths, options, self.args.max_tilt, allow_reordering=allow_reordering,
+            near_joint=getattr(self.args, 'offset', math.inf) <= CLOSE_WELD_OFFSET_M)
+        planning_progress(self, 'search', total=len(search))
         try:
-            for tilt,direction,roll in options:
-                if time.monotonic()>=self.orientation_deadline or successes>=12:break
+            for mode, kind, order, tilt, direction, roll in search:
+                if time.monotonic()>=self.orientation_deadline or len(complete)>=12:break
                 self.report=deepcopy(original);self.cartesian_targets={};self.joint_targets={}
-                candidate=[(edge,seam,points,tilted_orientation(q,tilt,direction,roll)) for edge,seam,points,q in paths]
-                entry=dict(tilt_deg=tilt,direction_deg=direction,roll_delta_deg=roll)
+                self.anchor_only = mode != 'fixed' or kind != 'forward'
+                candidate = []
+                for edge, seam, points, q in order:
+                    if mode == 'radial':
+                        orientation = radial_orientations(
+                            q, seam, edge.radial_offset_center, edge.outward, tilt, roll)
+                    elif mode == 'orbit':
+                        orientation = orbit_orientations(
+                            q, seam, edge.radial_offset_center, edge.outward, tilt, roll)
+                    elif mode == 'pipe_plate':
+                        reverse = kind.endswith('_reverse')
+                        ring = seam[::-1] if reverse else seam
+                        orientation = pipe_plate_orientations(q, ring, edge.radial_offset_center, edge.outward)
+                        if reverse:
+                            orientation = orientation[::-1]
+                    elif mode == 'sweep':
+                        orientation = swept_orientations(q, seam, tilt, direction, roll)
+                    elif mode == 'aimed':
+                        orientation = aimed_orientations(q, seam, points, tilt, direction, roll)
+                    else:
+                        orientation = tilted_orientation(q, tilt, direction, roll)
+                    candidate.append((edge, seam, points, orientation))
+                entry = dict(tilt_deg=tilt, direction_deg=direction, roll_delta_deg=roll,
+                             path_order=kind, orientation_profile=mode)
+                for selection, (edge, seam, points, q) in zip(self.report.get('selection', []), candidate):
+                    selection.update(seam=seam.tolist(), tool_path=points.tolist(),
+                                     orientation_xyzw=(q[0] if q.ndim == 2 else q).tolist())
+                    if q.ndim == 2:
+                        selection['waypoint_orientations_xyzw'] = q.tolist()
+                    if kind != 'forward' and selection.get('probe_contacts'):
+                        selection['probe_contacts'] = probe_contacts(self.geometry, edge, seam)
                 try:
                     stages=self.plan_fixed(candidate)
                     quality=trajectory_quality(stages,values,self.profile.joints)
@@ -597,26 +612,27 @@ class WeldingRunner(Node):
                         raise RuntimeError(f"Insufficient tabletop clearance for {clearance['link']} "
                                            f"in {clearance['stage']}: {clearance['clearance_m']*1000:.1f} mm "
                                            f"(requires {TABLE_CLEARANCE_M*1000:.0f} mm)")
-                    successes+=1;entry.update(status='planned',quality=quality)
-                    if best is None or quality['cost']<best['quality']['cost']:
-                        best=dict(stages=stages,quality=quality,report=deepcopy(self.report),paths=candidate,
-                            cartesian=deepcopy(self.cartesian_targets),joint=deepcopy(self.joint_targets),orientation=entry.copy())
+                    entry.update(status='planned',quality=quality)
+                    complete.append(dict(stages=stages,quality=quality,report=deepcopy(self.report),paths=candidate,
+                        cartesian=deepcopy(self.cartesian_targets),joint=deepcopy(self.joint_targets),orientation=entry))
                 except (RuntimeError,ValueError) as error:
                     entry.update(status='failed',error=str(error))
                     entry['stage_errors'] = self.report.get('stage_errors', [])
                 attempts.append(entry)
-                planning_progress(self, 'search', len(attempts), len(options), successes)
+                planning_progress(self, 'search', len(attempts), len(search), len(complete))
         finally:
             self.display=publisher;self.optimization_start=None;self.orientation_deadline=None
-        if best is None:
+            self.anchor_only = False
+        if not complete:
             self.report=original;self.report['orientation_attempts']=attempts
             diagnostics = self.descent_diagnostics
             self.report['descent_diagnostics'] = diagnostics
             stages = [failure['stage'] for attempt in attempts for failure in attempt['stage_errors']]
-            reached = next((stage for stage in ('lift', 'weld', 'descent', 'approach', 'probe')
+            reached = next((stage for stage in ('lift', 'weld', 'descent', 'seam_first', 'approach', 'probe')
                             if stage in stages), None)
             reason = {'lift': 'post-weld lift failed', 'weld': 'weld pass failed',
-                      'descent': 'descent to weld start failed', 'approach': 'approach failed',
+                      'descent': 'descent to weld start failed', 'seam_first': 'no collision-free branch from the seam',
+                      'approach': 'approach failed',
                       'probe': 'CAD probing failed'}
             detail = reason.get(reached, 'no complete candidate within the search budget')
             margins = [attempt['table_clearance'] for attempt in attempts if 'table_clearance' in attempt]
@@ -642,25 +658,41 @@ class WeldingRunner(Node):
             raise RuntimeError('Robot moved during route comparison; plan again')
         scene=self.call(GetPlanningScene,'/get_planning_scene',GetPlanningScene.Request()).scene
         if (sorted(scene.world.collision_objects,key=lambda o:o.id)!=sorted(self.initial_scene.world.collision_objects,key=lambda o:o.id)
-                or scene.robot_state.attached_collision_objects!=self.initial_scene.robot_state.attached_collision_objects):
+                or scene.robot_state.attached_collision_objects!=self.initial_scene.robot_state.attached_collision_objects
+                or getattr(scene, 'allowed_collision_matrix', None)
+                != getattr(self.initial_scene, 'allowed_collision_matrix', None)):
             raise RuntimeError('Collision scene changed during route comparison; plan again')
-        self.report=best['report'];self.cartesian_targets=best['cartesian'];self.joint_targets=best['joint'];self.planned_paths=best['paths']
-        self.report.update(orientation_attempts=attempts,descent_diagnostics=self.descent_diagnostics,
-            chosen_orientation=best['orientation'],optimization=dict(
-            quality=best['quality'],complete_candidates=successes,scope='best sampled complete route; no global optimality guarantee'))
-        for i,(_,_,_,q) in enumerate(best['paths']):
-            if i<len(self.report.get('selection',[])):self.report['selection'][i]['orientation_xyzw']=q.tolist()
         self.check_world_collisions_enabled(scene)
         self.get_logger().info('Planning whole-body collision validation for the selected route')
-        state = start
-        total = len(best['stages'])
-        planning_progress(self, 'verify', total=total)
-        for completed, (name, trajectory) in enumerate(best['stages'], start=1):
-            self.check_body_path(name, trajectory, state.joint_state)
-            state = self.end_state(state, trajectory)
-            planning_progress(self, 'verify', completed, total)
-        publisher.publish(DisplayTrajectory(model_id=self.profile.model,trajectory_start=start,trajectory=[t for _,t in best['stages']]))
-        return best['stages']
+        validation_failures = []
+        for best in sorted(complete, key=lambda item: item['quality']['cost']):
+            self.report = best['report']
+            self.report.update(orientation_attempts=attempts, descent_diagnostics=self.descent_diagnostics,
+                               chosen_orientation=best['orientation'], optimization=dict(
+                                   quality=best['quality'], complete_candidates=len(complete),
+                                   scope='best sampled complete route; no global optimality guarantee'),
+                               validation_failures=validation_failures)
+            state = start
+            total = len(best['stages'])
+            planning_progress(self, 'verify', total=total)
+            try:
+                for completed, (name, trajectory) in enumerate(best['stages'], start=1):
+                    self.check_body_path(name, trajectory, state.joint_state)
+                    state = self.end_state(state, trajectory)
+                    planning_progress(self, 'verify', completed, total)
+                validate_replay = getattr(self, 'validate_candidate_replay', None)
+                if validate_replay is not None:
+                    validate_replay(best['stages'])
+            except RuntimeError as error:
+                validation_failures.append(dict(orientation=best['orientation'], error=str(error)))
+                continue
+            self.cartesian_targets = best['cartesian']
+            self.joint_targets = best['joint']
+            self.planned_paths = best['paths']
+            publisher.publish(DisplayTrajectory(model_id=self.profile.model, trajectory_start=start,
+                                                trajectory=[trajectory for _, trajectory in best['stages']]))
+            return best['stages']
+        raise RuntimeError(validation_failures[-1]['error'])
 
     def plan_probe(self, state, edge, contacts, orientation):
         """Plan every probe approach, target and retreat before allowing motion."""
@@ -674,36 +706,100 @@ class WeldingRunner(Node):
         targets[:, 2] += vertical_clearance
         if use_standoff and getattr(edge, 'level_tcp', False) and len(targets):
             targets[:, 2] = targets[:, 2].max()
+        probe_orientations = []
+        deadline = getattr(self, 'orientation_deadline', None)
         for contact, target in zip(contacts, targets):
             point_id = f"{contact['station']}{contact['side']}"
             prefix = f'{edge.id}:probe:{point_id}'
             normal = np.asarray(contact['normal'])
-            # Retreat normal to the plane. Keep the same torch orientation.
             pre = target + self.args.clearance * normal
-            motion = 'approach'
-            try:
-                approach = self.approach(state, pre, orientation)
-                state = self.end_state(state, approach)
-                stages.append((f'{prefix}:approach', approach))
-                for motion, position in ((target_motion, target), ('retract', pre)):
-                    name = f'{prefix}:{motion}'
-                    waypoints = [pose_message(position, orientation)]
-                    trajectory = self.cartesian(state, waypoints, speed_limit=PROBE_SPEED_M_S)
-                    self.cartesian_targets[name] = waypoints
-                    stages.append((name, trajectory))
-                    state = self.end_state(state, trajectory)
-            except RuntimeError as error:
+            variants = [(orientation, pre)]
+            search = (use_standoff and getattr(self.args, 'orientation_mode', None) == 'auto'
+                      and getattr(self.args, 'offset', math.inf) <= CLOSE_WELD_OFFSET_M
+                      and not getattr(edge, 'level_tcp', False))
+            if search:
+                positions = [pre]
+                if self.args.clearance > CLOSE_PROBE_APPROACH_M:
+                    close_pre = target + CLOSE_PROBE_APPROACH_M * normal
+                    positions.insert(0, close_pre)
+                    variants.append((orientation, close_pre))
+                variants.extend((q, position) for q in standoff_orientations(normal, self.args.max_tilt)
+                                for position in positions)
+            for q, position in variants:
+                motion = 'approach'
+                try:
+                    approach = self.approach(state, position, q)
+                    approached = self.end_state(state, approach)
+                    local_stages = [(f'{prefix}:approach', approach)]
+                    local_waypoints = {}
+                    for motion, destination in ((target_motion, target), ('retract', position)):
+                        name = f'{prefix}:{motion}'
+                        waypoints = [pose_message(destination, q)]
+                        trajectory = self.cartesian(approached, waypoints, speed_limit=PROBE_SPEED_M_S)
+                        local_waypoints[name] = waypoints
+                        local_stages.append((name, trajectory))
+                        approached = self.end_state(approached, trajectory)
+                    if search:
+                        clearance = self.body_clearance.minimum(local_stages, state.joint_state)
+                        if clearance['clearance_m'] < TABLE_CLEARANCE_M:
+                            raise RuntimeError('CAD probing violates the minimum tabletop clearance')
+                except RuntimeError as error:
+                    failure = error
+                    if deadline is not None and time.monotonic() >= deadline:
+                        break
+                    continue
+                state = approached
+                stages.extend(local_stages)
+                self.cartesian_targets.update(local_waypoints)
+                probe_orientations.append(np.asarray(q).tolist())
+                failure = None
+                break
+            if failure is not None:
                 self.report.setdefault('stage_errors', []).append(dict(
-                    stage='probe', seam=edge.id, point=point_id, motion=motion, error=str(error)))
-                raise RuntimeError(f'CAD probing {point_id} {motion} failed: {error}') from error
+                    stage='probe', seam=edge.id, point=point_id, motion=motion, error=str(failure)))
+                raise RuntimeError(f'CAD probing {point_id} {motion} failed: {failure}') from failure
         self.report.setdefault('probing', []).append({
             'seam': edge.id, 'points': contacts,
             'mode': 'standoff' if target_motion == 'standoff' else 'nominal_contact',
             'vertical_clearance_m': vertical_clearance,
             'standoff_m': standoff,
             'tcp_targets_xyz_m': targets.tolist(),
+            'orientations_xyzw': probe_orientations,
         })
         return state, stages
+
+    def plan_weld_from_start(self, state, seed, edge, points, waypoints, orientation, approach_positions):
+        """Search a collision-free welding branch before committing to a joint approach."""
+        weld_start = self.inverse_kinematics(seed, points[0], orientation)
+        weld_waypoints = waypoints[1:]
+        level_z = float(points[-1, 2]) if getattr(edge, 'level_tcp', False) else None
+        preview = self.cartesian(weld_start, weld_waypoints, retime=False)
+        if getattr(edge, 'radial_offset_center', None) is not None and getattr(self.args, 'offset', math.inf) <= CLOSE_WELD_OFFSET_M:
+            clearance = self.body_clearance.minimum([(edge.id, preview)], weld_start.joint_state)
+            if clearance['clearance_m'] < TABLE_CLEARANCE_M:
+                raise RuntimeError(f"Insufficient tabletop clearance at {clearance['link']}: "
+                                   f"{clearance['clearance_m'] * 1000:.1f} mm")
+        for position in approach_positions:
+            try:
+                retreat = self.cartesian(weld_start, [pose_message(position, orientation)], retime=False)
+                target = self.end_state(weld_start, retreat).joint_state
+                approach = self.joint_motion(state, dict(zip(target.name, target.position)))
+                approached = self.end_state(state, approach)
+                descent = self.cartesian(approached, waypoints[:1])
+                reached = self.end_state(approached, descent)
+                weld = self.cartesian(reached, weld_waypoints, level_z=level_z)
+                return approach, descent, weld, reached, weld_waypoints
+            except RuntimeError:
+                if time.monotonic() >= self.orientation_deadline:
+                    raise
+        # A blocked straight descent may still admit a collision-free joint
+        # approach. The welding pass still starts at the same TCP waypoint.
+        target = weld_start.joint_state
+        approach = self.joint_motion(state, dict(zip(target.name, target.position)))
+        reached = self.end_state(state, approach)
+        weld = self.cartesian(reached, weld_waypoints, level_z=level_z)
+        self.report.setdefault('joint_approach_fallbacks', []).append(edge.id)
+        return approach, None, weld, reached, weld_waypoints
 
     def plan_fixed(self, paths):
         start = deepcopy(self.optimization_start) if getattr(self,'optimization_start',None) is not None else self.fresh_state()
@@ -713,7 +809,12 @@ class WeldingRunner(Node):
                                 'joint_positions': {j: positions[j] for j in profile_of(self).joints}}
         state = deepcopy(start)
         stages = []
-        for path_index, (edge, seam, points, orientation) in enumerate(paths):
+        for path_index, (edge, seam, points, route_orientation) in enumerate(paths):
+            close_ring = (getattr(edge, 'radial_offset_center', None) is not None
+                          and getattr(self.args, 'offset', math.inf) <= CLOSE_WELD_OFFSET_M)
+            pose_sequence = np.asarray(route_orientation)
+            orientation = pose_sequence[0] if pose_sequence.ndim == 2 else pose_sequence
+            end_orientation = pose_sequence[-1] if pose_sequence.ndim == 2 else pose_sequence
             self.get_logger().info(f"Planning {edge.id}")
             if getattr(self.args, 'probe', False) or getattr(self.args, 'probe_standoff', False):
                 contacts = probe_contacts(self.geometry, edge, seam)
@@ -721,10 +822,12 @@ class WeldingRunner(Node):
                     state, probe_stages = self.plan_probe(state, edge, contacts, orientation)
                     stages.extend(probe_stages)
             pre = points[0] + self.args.clearance * edge.outward
-            waypoints = [pose_message(p, orientation) for p in points]
-            final_lift = profile_of(self).real and path_index == len(paths)-1
+            orientations = pose_sequence if pose_sequence.ndim == 2 else [orientation] * len(points)
+            waypoints = [pose_message(point, q) for point, q in zip(points, orientations)]
+            lift_after_weld = profile_of(self).real or getattr(self, 'lift_after_weld', False)
+            final_lift = lift_after_weld and path_index == len(paths)-1
             if not final_lift:
-                waypoints.append(pose_message(points[-1] + self.args.clearance * edge.outward, orientation))
+                waypoints.append(pose_message(points[-1] + self.args.clearance * edge.outward, end_orientation))
             # A reachable start pose can have several IK branches. Search for
             # one that supports the entire contour before moving the robot.
             seeds = [state]
@@ -736,32 +839,62 @@ class WeldingRunner(Node):
                     seed.joint_state = JointState(name=list(values), position=list(values.values()))
                     seeds.append(seed)
             last_error = None
-            if getattr(self,'orientation_deadline',None) is not None:seeds=seeds[:2]
-            real = profile_of(self).real
+            split_descent = lift_after_weld
             approaches = [('surface_normal', pre)]
-            if real:
+            if split_descent:
                 # With a tilted torch, sliding in along its own axis can keep
                 # the nozzle clear where a straight vertical descent cannot.
                 axial_pre = points[0] - self.args.clearance * rotation(orientation)[:, 2]
                 if np.linalg.norm(axial_pre-pre) > 1e-4:
                     approaches.append(('tool_axis', axial_pre))
-            variants = [(seed, name, position) for seed in seeds for name, position in approaches]
+            anchored = (split_descent and getattr(edge, 'kind', None) == 'weld'
+                        and not getattr(edge, 'level_tcp', False)
+                        and getattr(self.args, 'orientation_mode', None) == 'auto')
+            approach_seeds = seeds[:2] if getattr(self, 'orientation_deadline', None) is not None else seeds
+            variants = [(seed, name, position) for seed in approach_seeds for name, position in approaches]
+            if anchored:
+                if self.profile.real:
+                    # Sample wrist configurations apart from the measured JAKA posture.
+                    wrist_turns = (-math.pi / 2, math.pi / 2)
+                    if close_ring:
+                        wrist_turns += (-math.pi, math.pi)
+                    for wrist_turn in wrist_turns:
+                        seed = deepcopy(state)
+                        wrist_index = seed.joint_state.name.index(self.profile.joints[-1])
+                        seed.joint_state.position[wrist_index] += wrist_turn
+                        seeds.append(seed)
+                vertical_pre = points[0] + (0., 0., self.args.clearance)
+                retreat_positions = [vertical_pre] + [position for _, position in approaches
+                                                     if not np.allclose(position, vertical_pre)]
+                if close_ring:
+                    # Give the arm room to change elbow posture above a close circular joint.
+                    overhead = [points[0] + (0., 0., height) for height in (.15, .25)
+                                if height > self.args.clearance]
+                    retreat_positions = overhead + retreat_positions
+                anchored_variants = [(seed, 'seam_first', retreat_positions) for seed in seeds]
+                variants = anchored_variants if getattr(self, 'anchor_only', False) else anchored_variants + variants
+            descent = None
             for attempt, (seed, approach_kind, pre_position) in enumerate(variants, 1):
                 if getattr(self,'orientation_deadline',None) is not None and time.monotonic()>=self.orientation_deadline:
                     raise RuntimeError('Orientation search time budget exhausted')
                 stage = 'approach'
                 try:
+                    if approach_kind == 'seam_first':
+                        stage = 'seam_first'
+                        approach, descent, weld, weld_start, weld_waypoints = self.plan_weld_from_start(
+                            state, seed, edge, points, waypoints, orientation, pre_position)
+                        break
                     approach = self.approach(state, pre_position, orientation, seed)
                     approached = self.end_state(state, approach)
                     weld_start = approached
                     weld_waypoints = waypoints
-                    if real:
+                    if split_descent:
                         stage = 'descent'
                         descent = self.cartesian(approached, waypoints[:1])
                         weld_start = self.end_state(approached, descent)
                         weld_waypoints = waypoints[1:]
                     stage = 'weld'
-                    if real and getattr(edge, 'level_tcp', False):
+                    if split_descent and getattr(edge, 'level_tcp', False):
                         weld = self.cartesian(weld_start, weld_waypoints, level_z=float(points[-1, 2]))
                     else:
                         weld = self.cartesian(weld_start, weld_waypoints)
@@ -783,21 +916,24 @@ class WeldingRunner(Node):
             else:
                 raise RuntimeError(f"No complete approach and contour found: {last_error}")
             stages.append((f"{edge.id}:approach", approach))
-            if real:
+            if descent is not None:
                 descent_name = f"{edge.id}:descent"
                 self.cartesian_targets[descent_name] = waypoints[:1]
                 stages.append((descent_name, descent))
+            elif approach_kind == 'seam_first':
+                target = weld_start.joint_state
+                self.joint_targets[f"{edge.id}:approach"] = dict(zip(target.name, target.position))
             stage_name = f"{edge.id}:pass_and_retract"
             self.cartesian_targets[stage_name] = weld_waypoints
             stages.append((stage_name, weld))
             state = self.end_state(weld_start, weld)
-        if profile_of(self).real:
+        if lift_after_weld:
             # End above the last welding point, with unchanged TCP orientation.
             # This stage must be reachable before any job motion is allowed.
             self.get_logger().info("Planning vertical lift of 0.25 m after welding")
             target = points[-1].copy()
             target[2] += 0.25
-            lift_waypoints = [pose_message(target, orientation)]
+            lift_waypoints = [pose_message(target, end_orientation)]
             try:
                 finish = self.cartesian(state, lift_waypoints)
             except RuntimeError as error:
@@ -807,8 +943,9 @@ class WeldingRunner(Node):
             stages.append(("workpiece:lift", finish))
             self.report["completion"] = {"mode": "vertical_lift", "height_m": 0.25,
                                          "target_xyz": target.tolist(),
-                                         "orientation_xyzw": orientation.tolist()}
-        else:
+                                         "orientation_xyzw": end_orientation.tolist()}
+            state = self.end_state(state, finish)
+        if not profile_of(self).real:
             self.get_logger().info("Planning return to the saved joint configuration")
             targets = dict(self.return_pose['joint_positions'])
             finish = self.joint_motion(state, targets)
@@ -860,6 +997,9 @@ class WeldingRunner(Node):
                 self.report['jaka_feedback'] = capture.report
             except RuntimeError as error:
                 self.report['jaka_feedback'] = dict(status='unavailable', error=str(error))
+        else:
+            capture = self.feedback_capture = IsaacFeedbackCapture(self.profile.joint_states, self.profile.joints)
+            self.report['isaac_feedback'] = capture.report
         for name, trajectory in stages:
             if getattr(self.args, 'scan_report', None):
                 # Use the installed bridge and its separate numerical environment.
@@ -883,7 +1023,7 @@ class WeldingRunner(Node):
                 if floor!=self.planning_floor:
                     raise RuntimeError('Collision floor changed or was removed since planning; replan before execution')
             trajectory = self.prepare_execution(name, trajectory)
-            if self.profile.real:
+            if self.body_clearance is not None:
                 self.check_world_collisions_enabled(scene)
                 self.check_body_path(name, trajectory, self.latest_state)
                 clearance = self.body_clearance.minimum([(name, trajectory)], self.latest_state)
@@ -895,6 +1035,7 @@ class WeldingRunner(Node):
                 final_scene = self.call(GetPlanningScene, "/get_planning_scene", GetPlanningScene.Request()).scene
                 if ({obj.id: obj for obj in final_scene.world.collision_objects}
                         != {obj.id: obj for obj in scene.world.collision_objects}
+                        or final_scene.robot_state.attached_collision_objects != scene.robot_state.attached_collision_objects
                         or final_scene.allowed_collision_matrix != scene.allowed_collision_matrix):
                     raise RuntimeError('Collision scene changed during final verification; replan before execution')
             self.get_logger().info(f"Executing {name}")
@@ -989,11 +1130,13 @@ def arguments():
     parser.add_argument('--orientation-mode', choices=['auto','fixed'], default='auto')
     parser.add_argument('--tilt',type=float,default=0.,help='TCP inclination from the surface normal, degrees')
     parser.add_argument('--tilt-direction',type=float,default=0.,help='Inclination direction in the nominal tool XY plane, degrees')
-    parser.add_argument('--max-tilt',type=float,default=45.,help='Maximum inclination during automatic search, degrees')
+    parser.add_argument('--max-tilt',type=float,default=60.,help='Maximum inclination during automatic search, degrees')
     parser.add_argument('--orientation-timeout',type=float,default=120.,help='Approximate automatic planning budget, seconds')
     parser.add_argument("--speed", type=float, default=0.02, help="Maximum pass speed, m/s")
     parser.add_argument("--scaling", type=float, default=0.05, help="Joint velocity/acceleration factor")
     parser.add_argument("--mode", choices=["preview", "plan", "execute"], default="preview")
+    parser.add_argument("--native-ur10", action="store_true",
+                        help="Plan directly in the UR10 model for diagnostics")
     probing = parser.add_mutually_exclusive_group()
     probing.add_argument("--probe", action="store_true", help="Include nominal CAD contact probing")
     probing.add_argument("--probe-standoff", action="store_true",
@@ -1029,6 +1172,9 @@ def main(runner_type=None):
         raise KeyboardInterrupt
     signal.signal(signal.SIGINT, interrupt)
     signal.signal(signal.SIGTERM, interrupt)
+    if runner_type is None and args.robot == 'isaac_ur10' and not args.native_ur10:
+        from .jaka_replay import JakaReplayRunner
+        runner_type = JakaReplayRunner
     node = (runner_type or WeldingRunner)(args)
     node.report['planning_source']='moveit_scene' if args.use_scene_workpiece else 'scan_receipt' if args.scan_report else 'default_scene'
     code = 0
@@ -1036,17 +1182,25 @@ def main(runner_type=None):
     try:
         if args.mode == "execute" and profile_of(node).real:
             lifetime.enter_context(welding_operation())
+        elif args.mode != "preview" and not args.list and hasattr(node, 'welding_profile'):
+            lifetime.enter_context(welding_operation(scope='isaac-jaka'))
         edges = node.read_object()
         geometry = node.geometry
         node.report['shape'] = geometry.shape
         if args.list:
-            for face, contour in geometry.contours.items():
-                center = np.mean(contour.vertices[:-1], axis=0)
-                print(f"face {face:8s} perimeter {contour.length:.3f} m  center {center.round(4).tolist()}")
-            print("Edges:")
-            for edge in edges:
-                print(f"{edge.id:24s} {edge.length:.3f} m  {edge.start.round(4).tolist()} -> {edge.end.round(4).tolist()}")
+            names = geometry.selectable_seams or tuple(geometry.contours)
+            for name in names:
+                contour = geometry.contour(name)
+                points = contour.vertices
+                center = np.mean(points[:-1] if np.allclose(points[0], points[-1]) else points, axis=0)
+                print(f"face {name:8s} length {contour.length:.3f} m  center {center.round(4).tolist()}")
+            if not geometry.selectable_seams:
+                print("Edges:")
+                for edge in edges:
+                    print(f"{edge.id:24s} {edge.length:.3f} m  {edge.start.round(4).tolist()} -> {edge.end.round(4).tolist()}")
             return 0
+        if geometry.selectable_seams and (args.edge or (args.face and args.face not in geometry.selectable_seams)):
+            raise ValueError(f"Select a weld seam with --face: {', '.join(geometry.selectable_seams)}")
         if args.edge:
             selected = geometry.select(args.edge)
             seams = selected
@@ -1058,7 +1212,7 @@ def main(runner_type=None):
             seams = [geometry.contour(face)]
         paths = [(edge, *edge.path(args.begin, args.end, args.offset, args.step, math.radians(args.roll)))
                  for edge in seams]
-        profile = profile_of(node)
+        profile = getattr(node, 'welding_profile', profile_of(node))
         paths = [(edge, seam, points + (0., 0., profile.path_vertical_clearance(edge)), orientation)
                  for edge, seam, points, orientation in paths]
         node.report['vertical_clearance_m'] = profile.vertical_clearance_m

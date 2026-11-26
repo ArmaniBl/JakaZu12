@@ -8,10 +8,8 @@ source "$workspace_dir/setup_isaac.bash"
 set -u
 
 cd "$workspace_dir"
-packages=(ur10_isaac_moveit_config)
-if [[ ${1:-} == --real ]]; then
-  packages+=(jaka_description jaka_planner jaka_zu12_moveit_config)
-elif [[ $# != 0 ]]; then
+packages=(ur10_isaac_moveit_config jaka_description jaka_planner jaka_zu12_moveit_config)
+if [[ $# != 0 && ( $# != 1 || $1 != --real ) ]]; then
   echo 'Usage: ./build.sh [--real]' >&2
   exit 2
 fi

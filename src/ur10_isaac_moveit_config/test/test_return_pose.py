@@ -57,7 +57,7 @@ class ReturnPoseTests(unittest.TestCase):
 
     def test_saved_return_is_last_and_planned_from_retracted_state(self):
         stub=self.stub(trajectory(.3))
-        stages=WeldingRunner.plan(stub,self.paths())
+        stages=WeldingRunner.plan_fixed(stub,self.paths())
         self.assertEqual(stages[-1][0],'workpiece:return')
         self.assertEqual(stub.joint_motion.call_args.args[1],TARGETS)
         self.assertEqual(stub.joint_motion.call_args.args[0].joint_state.position[0],.2)
@@ -65,7 +65,7 @@ class ReturnPoseTests(unittest.TestCase):
 
     def test_unreachable_return_prevents_a_complete_plan(self):
         stub=self.stub(RuntimeError('return path blocked'))
-        with self.assertRaisesRegex(RuntimeError,'return path blocked'):WeldingRunner.plan(stub,self.paths())
+        with self.assertRaisesRegex(RuntimeError,'return path blocked'):WeldingRunner.plan_fixed(stub,self.paths())
         stub.display.publish.assert_not_called()
 
     def test_real_job_ends_with_vertical_lift_without_return(self):

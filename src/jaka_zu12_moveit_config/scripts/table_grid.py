@@ -13,7 +13,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from visualization_msgs.msg import Marker, MarkerArray
-from welding_sim.table_limits import JAKA_TABLE_TOP_M
+from welding_sim.table_limits import JAKA_TABLE_TOP_M, world_point
 
 
 def column_name(index):
@@ -34,16 +34,7 @@ def holes(config):
                  y_mm=grid['offset_y_mm']+y*pitch) for y in range(ny) for x in range(nx)]
 
 
-def world_point(config, x_mm, y_mm, z_mm=0.):
-    transform = config['world_from_table']
-    angle = math.radians(transform['yaw_deg'])
-    tx, ty, tz = transform['translation_m']
-    return (tx + (math.cos(angle)*x_mm-math.sin(angle)*y_mm)/1000,
-            ty + (math.sin(angle)*x_mm+math.cos(angle)*y_mm)/1000,
-            tz + z_mm/1000)
-
-
-def make_markers(config):
+def make_markers(config, show_tabletop=False):
     markers = []
     def marker(namespace, kind, color):
         item = Marker()
@@ -60,6 +51,10 @@ def make_markers(config):
         item.pose.position = Point(x=x, y=y, z=z)
         item.scale.z = size
     width, depth = config['table']['width_mm']/1000, config['table']['depth_mm']/1000
+    if show_tabletop:
+        tabletop = marker('tabletop', Marker.CUBE, (.45, .48, .52, 1.))
+        tabletop.scale.x, tabletop.scale.y, tabletop.scale.z = width, depth, .10
+        tabletop.pose.position = Point(x=width / 2, y=depth / 2, z=-tabletop.scale.z / 2)
     grid = config['grid']
     lattice = holes(config)
     lines = marker('grid_lines', Marker.LINE_LIST, (.66,.69,.72,.7))
@@ -105,12 +100,14 @@ def make_markers(config):
 class TableGrid(Node):
     def __init__(self):
         super().__init__('table_grid_reference')
-        default = str(Path(get_package_share_directory('jaka_zu12_moveit_config'))/'config/table_grid.json')
+        default = str(Path(get_package_share_directory('ur10_isaac_moveit_config'))/'config/table_grid.json')
         config_path = self.declare_parameter('config', default).value
         config = json.loads(Path(config_path).read_text())
-        self.markers = make_markers(config)
+        top_z = self.declare_parameter('top_z', JAKA_TABLE_TOP_M).value
+        show_tabletop = self.declare_parameter('show_tabletop', False).value
+        self.markers = make_markers(config, show_tabletop)
         for marker in self.markers.markers:
-            marker.pose.position.z += JAKA_TABLE_TOP_M - config['world_from_table']['translation_m'][2]
+            marker.pose.position.z += top_z - config['world_from_table']['translation_m'][2]
         self.publisher = self.create_publisher(MarkerArray, '/table/grid',
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.broadcaster = StaticTransformBroadcaster(self)

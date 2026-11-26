@@ -11,6 +11,31 @@ Panels:
 Visualization Manager:
   Displays:
     - Class: rviz_default_plugins/MarkerArray
+      Name: Table grid A1-X16
+      Enabled: true
+      Topic:
+        Value: /table/grid
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Isaac Sim depth camera
+      Enabled: true
+      Topic:
+        Value: /depth_pcl
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 1
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 80; 210; 240
+      Size (m): 0.002
+      Style: Points
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
       Name: Welding seams
       Enabled: true
       Topic:

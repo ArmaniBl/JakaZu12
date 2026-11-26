@@ -6,4 +6,7 @@ ament_python_install_package(welding_sim)
 install(DIRECTORY config launch web meshes assets DESTINATION share/${PROJECT_NAME})
 install(FILES .setup_assistant DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS scripts/joint_state_clock.py scripts/add_workpiece.py scripts/add_floor.py scripts/weld.py scripts/welding_web.py scripts/rangevision.py scripts/scan_job.py scripts/optimal_test.py DESTINATION lib/${PROJECT_NAME})
+# Install the same tabletop layout and marker publisher for both robot profiles.
+install(PROGRAMS ../jaka_zu12_moveit_config/scripts/table_grid.py DESTINATION lib/${PROJECT_NAME})
+install(FILES ../jaka_zu12_moveit_config/config/table_grid.json DESTINATION share/${PROJECT_NAME}/config)
 ament_package()

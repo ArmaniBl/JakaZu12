@@ -32,7 +32,7 @@ def _vertices(geometry):
         return np.array(list(product((-.5, .5), repeat=3))) * _xyz(box, 'size', '')
     mesh = geometry.find('mesh')
     if mesh is None or not mesh.get('filename', '').startswith('package://'):
-        raise ValueError('Unsupported JAKA collision shape in robot_description')
+        raise ValueError('Unsupported collision shape in robot_description')
     package, _, filename = mesh.get('filename')[len('package://'):].partition('/')
     raw = (Path(get_package_share_directory(package)) / filename).read_bytes()
     if len(raw) < 84 or 84 + int.from_bytes(raw[80:84], 'little') * 50 != len(raw):
@@ -57,25 +57,35 @@ class TableClearance:
         by_child = {joint.find('child').get('link'): joint for joint in robot.findall('joint')}
         self.chain = []
         self.shapes = {}
-        for name in profile.frames:
-            if name == profile.frame:
-                continue
+        ordered = {}
+        for frame in profile.frames:
+            name = frame
+            ancestors = []
+            while name in by_child and name != profile.frame and name not in ordered:
+                ancestors.append(name)
+                name = by_child[name].find('parent').get('link')
+            ordered.update(dict.fromkeys(reversed(ancestors)))
+        moving = set()
+        for name in ordered:
             joint = by_child[name]
+            parent = joint.find('parent').get('link')
             axis = joint.find('axis')
             number = self.joints.index(joint.get('name')) if joint.get('name') in self.joints else None
             if joint.get('type') not in ('fixed', 'revolute', 'continuous') or (number is not None and axis is None):
-                raise ValueError(f'Unsupported JAKA joint for clearance: {joint.get("name")}')
-            self.chain.append((name, joint.find('parent').get('link'), *_origin(joint.find('origin')),
+                raise ValueError(f'Unsupported joint for clearance: {joint.get("name")}')
+            self.chain.append((name, parent, *_origin(joint.find('origin')),
                                number, None if axis is None else _xyz(axis, 'xyz', '')))
-            if name in ('Link_0', profile.tip):
+            if number is None and parent not in moving:
                 continue
+            moving.add(name)
             vertices = []
             for collision in links[name].findall('collision'):
                 r, p = _origin(collision.find('origin'))
                 vertices.append(_vertices(collision.find('geometry')) @ r.T + p)
-            if not vertices or not all(np.isfinite(v).all() for v in vertices):
+            if (not vertices and number is not None) or not all(np.isfinite(v).all() for v in vertices):
                 raise ValueError(f'No valid collision geometry for {name}')
-            self.shapes[name] = np.ascontiguousarray(np.concatenate(vertices).T)
+            if vertices:
+                self.shapes[name] = np.ascontiguousarray(np.concatenate(vertices).T)
         if floor.header.frame_id != profile.frame or len(floor.primitives) != 1 or len(floor.primitive_poses) != 1:
             raise ValueError('Expected one tabletop box in the robot world frame')
         box, local = floor.primitives[0], floor.primitive_poses[0]

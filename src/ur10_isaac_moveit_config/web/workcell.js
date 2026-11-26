@@ -147,10 +147,19 @@ async function createViewer() {
       if (object.id === 'floor') {
         mesh = buildTable(object);
       } else {
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(object.vertices, 3));
-        geometry.setIndex(object.indices);
-        geometry.computeVertexNormals();
+        let geometry;
+        if (object.primitive === 'box') {
+          geometry = new THREE.BoxGeometry(...object.size);
+        } else if (object.primitive === 'cylinder') {
+          const [height, radius] = object.size;
+          geometry = new THREE.CylinderGeometry(radius, radius, height, 32);
+          geometry.rotateX(Math.PI / 2);
+        } else {
+          geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.Float32BufferAttribute(object.vertices, 3));
+          geometry.setIndex(object.indices);
+          geometry.computeVertexNormals();
+        }
         mesh = new THREE.Mesh(geometry, part);
         mesh.castShadow = mesh.receiveShadow = true;
       }
@@ -186,22 +195,27 @@ async function createViewer() {
 
   let revision = -1;
   let fitted = false;
+  let real = null;
   let measuredPose = null;
   let lastAnimatedPose = null;
 
   function readPose(points) {
     const poses = new Map((points || []).map(pose => [pose.frame, pose]));
-    return frames.every(frame => poses.has(frame)) ? poses : null;
+    return frames.slice(0, 7).every(frame => poses.has(frame)) ? poses : null;
   }
   function showPose(poses) {
-    for (const [frame, link] of links) applyPose(link, poses.get(frame));
+    for (const [frame, link] of links) {
+      const pose = poses.get(frame);
+      link.visible = Boolean(pose);
+      if (pose) applyPose(link, pose);
+    }
     arm.visible = true;
   }
   function showMissingPose(reason) {
     const fallback = measuredPose || lastAnimatedPose;
     if (meshesReady && fallback) showPose(fallback);
     robotStatus.classList.toggle('stale', arm.visible);
-    const label = measuredPose ? 'Последняя измеренная поза' : 'Последняя расчётная поза';
+    const label = measuredPose && real ? 'Последняя измеренная поза' : 'Последняя расчётная поза';
     robotStatus.textContent = arm.visible ? label + ' · ' + reason : reason;
   }
   async function poll() {
@@ -215,11 +229,17 @@ async function createViewer() {
         updateParts(data.objects);
         revision = data.revision;
       }
-      if (data.real) loadArm();
+      if (real !== data.real) {
+        real = data.real;
+        arm.visible = false;
+        measuredPose = lastAnimatedPose = null;
+      }
+      loadArm();
       const robot = data.robot || {};
-      const freshPose = data.real && robot.available ? readPose(robot.points) : null;
-      if (data.real) measuredPose = freshPose || readPose(data.last_pose?.points) || measuredPose;
-      const animated = data.real ? readPose(data.animation) : null;
+      const wasVisible = arm.visible;
+      const freshPose = robot.available ? readPose(robot.points) : null;
+      measuredPose = freshPose || readPose(data.last_pose?.points) || measuredPose;
+      const animated = real ? readPose(data.animation) : null;
       if (meshesReady && animated) {
         lastAnimatedPose = animated;
         showPose(animated);
@@ -227,19 +247,16 @@ async function createViewer() {
         robotStatus.classList.add('stale');
       } else if (meshesReady && freshPose) {
         showPose(freshPose);
-        robotStatus.textContent = 'Положение получено';
+        robotStatus.textContent = real ? 'Положение JAKA ZU12 из ROS' : 'JAKA ZU12 · поза по суставам UR10';
         robotStatus.classList.remove('stale');
       } else {
-        if (!data.real) {
-          arm.visible = false;
-          measuredPose = lastAnimatedPose = null;
-        }
         showMissingPose(meshesFailed ? 'Модель робота недоступна' :
-          !data.real ? 'Окно для JAKA' : !meshesReady ? 'Загружаем модель' :
-          robot.reason || 'Нет свежих данных TF');
+          !meshesReady ? 'Загружаем модель' : robot.reason || 'Нет свежих данных TF');
       }
       sceneStatus.textContent = data.live ? 'Данные MoveIt' : 'Нет свежих данных MoveIt';
-      if (!fitted && data.live && parts.children.length && (!data.real || arm.visible || meshesFailed)) {
+      const firstArmPose = arm.visible && !wasVisible;
+      const canFit = arm.visible || meshesFailed || !robot.available;
+      if (data.live && parts.children.length && canFit && (!fitted || firstArmPose)) {
         fitted = true;
         frame();
       }

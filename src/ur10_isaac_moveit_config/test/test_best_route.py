@@ -6,7 +6,7 @@ from moveit_msgs.msg import RobotState,RobotTrajectory
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 from welding_sim.runner import WeldingRunner
-from welding_sim.profiles import JAKA
+from welding_sim.profiles import ISAAC, JAKA
 from welding_sim.geometry import FaceContour
 from test_table_limits import TableLimitsTests
 import numpy as np
@@ -61,7 +61,39 @@ class BestRouteTests(unittest.TestCase):
   with self.assertRaisesRegex(RuntimeError,'Whole-body collision'):
    WeldingRunner.plan_best(f,p)
   self.assertFalse(published)
+ def test_collision_on_best_candidate_uses_next_validated_route(self):
+  f,p,published=self.fixture()
+  f.check_body_path.side_effect=[RuntimeError('Whole-body collision check failed'),None]
+  stages=WeldingRunner.plan_best(f,p)
+  self.assertEqual(stages[0][1].joint_trajectory.points[-1].positions[0],2.)
+  self.assertEqual(f.cartesian_targets,{'chosen':2.})
+  self.assertEqual(len(f.report['validation_failures']),1)
+  self.assertEqual(len(published),1)
  def test_scene_change_invalidates_selected_plan(self):
   f,p,published=self.fixture();f.call=lambda *args:NS(scene=NS(world=NS(collision_objects=[]),robot_state=f.initial_scene.robot_state))
   with self.assertRaisesRegex(RuntimeError,'scene changed'):WeldingRunner.plan_best(f,p)
   self.assertFalse(published)
+
+ def test_isaac_optimizes_without_jaka_workspace_walls(self):
+  f,p,published=self.fixture()
+  f.profile=ISAAC
+  f.args.orientation_mode='auto'
+  f.initial_scene.world.collision_objects.clear()
+  for method in ('settled_state','fresh_state'):
+   original=getattr(f,method)
+   def sim_state(original=original):
+    state=original()
+    state.joint_state.name=list(ISAAC.joints)
+    return state
+   setattr(f,method,sim_state)
+  plan=f.plan_fixed
+  def sim_plan(paths):
+   stages=plan(paths)
+   stages[0][1].joint_trajectory.joint_names=list(ISAAC.joints)
+   return stages
+  f.plan_fixed=sim_plan
+  options=[(0.,0.,float(roll)) for roll in range(4)]
+  with patch('welding_sim.runner.candidates',return_value=options):
+   stages=WeldingRunner.plan_best(f,p)
+  self.assertEqual(stages[0][1].joint_trajectory.points[-1].positions[0],1.)
+  self.assertEqual(len(published),1)

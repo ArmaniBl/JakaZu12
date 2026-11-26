@@ -83,7 +83,7 @@ PY
 Инструкция: [docs/WEB_UI.md](docs/WEB_UI.md).
 
 Ветка `welding` настроена для **Isaac Sim на Windows 11 + ROS 2 Jazzy в WSL2 Ubuntu 24.04**.
-Для симуляции используется отдельная модель UR10, группа MoveIt `ur_manipulator`.
+Сварку планирует модель JAKA ZU12. Симуляционный UR10 воспроизводит суставную траекторию через группу MoveIt `ur_manipulator`.
 Инструкция и результаты проверки: [docs/ISAAC_SIM.md](docs/ISAAC_SIM.md).
 
 ```bash
@@ -92,7 +92,7 @@ cd ~/jaka_zu12_welding
 ./run_isaac.sh
 ```
 
-Запуск с заготовкой `30 × 30 × 20 см` в `world: (-1, 0, 0.1)`:
+Запуск с заготовкой `30 × 30 × 20 см` на ячейке S8 с центром `world: (-0.065, -0.790, 0.100)`:
 `./run_isaac_with_object.sh` (объект в MoveIt/RViz, с проверкой коллизий).
 
 Имитация сварки по выбранной грани: `./weld.sh --face z_plus` — предпросмотр,
@@ -105,7 +105,7 @@ cd ~/jaka_zu12_welding
 [инструкция](docs/SHAPES_AND_REAL_ROBOT.md).
 Сборка физического режима: `./build.sh --real`; панель: `./run_web.sh --robot jaka_real`.
 Ниже сохранена историческая документация JAKA/Humble; для текущей ветки используйте
-инструкцию выше. Обычный `build.sh` собирает только пакет симуляции UR10.
+инструкцию выше. Обычный `build.sh` собирает модели UR10 и JAKA и их конфигурации MoveIt.
 
 Готовый workspace для JAKA ZU12 через ROS 2 Humble, MoveIt 2 и RViz.
 Включает драйвер JAKA SDK, URDF, меши, симуляцию, запуск физического робота,

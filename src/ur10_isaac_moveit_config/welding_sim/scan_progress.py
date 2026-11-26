@@ -67,13 +67,16 @@ def table_progress(workspace, progress):
     return progress
 
 def monitor_progress(controller, stop):
+    connected = False
     while not stop.is_set():
         try:
             if welding_operation_active():
-                progress = dict(state='PAUSED_MOTION', observed_unix=time.time())
+                progress = dict(state='PAUSED_MOTION', observed_unix=time.time(), connected=connected)
             else:
                 progress = table_progress(controller.workspace, progress_payload(scanner_state(controller.workspace)))
+                connected = progress['state'] != 'UNAVAILABLE'
         except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+            connected = False
             progress = dict(state='UNAVAILABLE', observed_unix=time.time())
         with controller.lock:
             controller.scan_progress = progress

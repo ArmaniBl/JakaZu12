@@ -30,7 +30,8 @@ def main():
         request.scene.is_diff=True;request.scene.robot_state.is_diff=True
         request.scene.world.collision_objects=[simulation_floor(args.top)]
         request.scene.allowed_collision_matrix=allow_base_support(matrix)
-        color=ObjectColor(id='floor');color.color.r=.45;color.color.g=.48;color.color.b=.52;color.color.a=1.
+        # RViz displays the compact tabletop published by table_grid.py.
+        color=ObjectColor(id='floor');color.color.a=0.
         request.scene.object_colors=[color]
         if not call(ApplyPlanningScene,'/apply_planning_scene',request).success:
             raise RuntimeError('MoveIt rejected the floor')

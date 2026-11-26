@@ -3,10 +3,13 @@ import numpy as np
 import hashlib
 import json
 import re
+from pathlib import Path
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from geometry_msgs.msg import Pose,Point
 from moveit_msgs.msg import CollisionObject
 from shape_msgs.msg import Mesh,MeshTriangle
 from .geometry import quaternion, rotation, FaceContour
+from .table_limits import default_workpiece_base
 
 PREVIEW_TYPE='scanner_preview_unregistered'
 SEAM_PREFIX='jaka-weld-seams/v1:'
@@ -18,23 +21,12 @@ WORKPIECE_CATALOG = (
 )
 
 
-# Full CAD contours retained for catalog models without authored weld paths.
-CATALOG_CONTOURS = {
-    '02-tee-gusset': {
-        'face_119': 'Верхний периметр основания',
-        'face_3': 'Контур тавра с одной стороны',
-        'face_685': 'Контур тавра с другой стороны',
-        'face_690': 'Верхний контур стенки',
-        'face_694': 'Косынка · наклонная грань 45°',
-        'face_0': 'Косынка · боковая грань со стороны −X',
-        'face_691': 'Косынка · боковая грань со стороны +X',
-    },
-    '04-pipe-plate': {
-        'face_237': 'Верхний периметр основания',
-        'face_813': 'Наружное кольцо торца трубы',
-        'face_813_hole_1': 'Внутреннее кольцо торца трубы',
-    },
-}
+def load_catalog_model(key):
+    try:
+        package = Path(get_package_share_directory('jaka_zu12_moveit_config'))
+    except PackageNotFoundError:
+        package = Path(__file__).resolve().parents[2] / 'jaka_zu12_moveit_config'
+    return json.loads((package / 'config/workpiece_models' / f'{key}.json').read_text(encoding='utf-8'))
 
 
 def mesh_signature(vertices, triangles):
@@ -44,18 +36,16 @@ def mesh_signature(vertices, triangles):
 
 def apply_model_seams(obj, geometry, center, orientation):
     """Read weld paths carried atomically with their collision mesh and pose."""
-    key = obj.type.key.removeprefix(CATALOG_PREFIX)
-    contours = CATALOG_CONTOURS.get(key, {}) if obj.type.key.startswith(CATALOG_PREFIX) else {}
-    if all(name in geometry.contours for name in contours):
-        for name, label in contours.items():
-            geometry.contours[name].label = label
-        geometry.selectable_seams = tuple(contours)
-        if key == '02-tee-gusset':
-            # Keep the side that contacted the real table farther above it.
-            geometry.contours['face_685'].extra_vertical_clearance_m = .015
-    if not obj.type.db.startswith(SEAM_PREFIX):
+    if obj.type.db.startswith(SEAM_PREFIX):
+        metadata = json.loads(obj.type.db[len(SEAM_PREFIX):])
+    elif any(obj.type.key == CATALOG_PREFIX + key for key, _, _ in WORKPIECE_CATALOG):
+        # Scenes loaded before these routes were authored still carry the catalog ID.
+        model = load_catalog_model(obj.type.key.removeprefix(CATALOG_PREFIX))
+        metadata = dict(mesh_signature=mesh_signature(np.asarray(model['vertices_mm']) * .001,
+                                                      model['triangles']),
+                        seams=model['seams'])
+    else:
         return geometry
-    metadata=json.loads(obj.type.db[len(SEAM_PREFIX):])
     mesh=obj.meshes[0]
     vertices=np.array([[v.x,v.y,v.z] for v in mesh.vertices])
     triangles=[list(t.vertex_indices) for t in mesh.triangles]
@@ -89,7 +79,7 @@ def apply_model_seams(obj, geometry, center, orientation):
             level_tcp=name == 'seam_center' and np.allclose(normal, [0., 0., 1.]),
             radial_offset_center=radial_center)
         selected.append(name)
-    geometry.selectable_seams=(*selected, *geometry.selectable_seams)
+    geometry.selectable_seams=tuple(selected)
     return geometry
 
 
@@ -124,3 +114,10 @@ def preview_object(model,transform=None):
     if model.get('seams'):
         obj.type.db=SEAM_PREFIX+json.dumps(dict(mesh_signature=mesh_signature(vertices,faces),seams=model['seams']),ensure_ascii=False)
     return obj
+
+
+def startup_workpiece(model, table_top):
+    """Place the startup CAD on the table using its configured orientation."""
+    workpiece = preview_object(model)
+    workpiece.pose.position.x, workpiece.pose.position.y, workpiece.pose.position.z = default_workpiece_base(table_top)
+    return workpiece

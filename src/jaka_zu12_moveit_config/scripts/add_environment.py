@@ -9,7 +9,7 @@ from moveit_msgs.msg import CollisionObject, ObjectColor, PlanningScene, Plannin
 from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene
 from rclpy.node import Node
 from shape_msgs.msg import SolidPrimitive
-from welding_sim.workpiece_model import preview_object
+from welding_sim.workpiece_model import startup_workpiece
 from welding_sim.table_limits import JAKA_TABLE_TOP_M, wall_specs
 from welding_sim.environment import allow_base_support
 
@@ -84,8 +84,7 @@ class EnvironmentLoader(Node):
             color=ObjectColor(id=name);color.color.a=0.
             scene.object_colors.append(color)
         model=json.loads(model_path.read_text())
-        workpiece = preview_object(model)
-        workpiece.pose.position.z += JAKA_TABLE_TOP_M
+        workpiece = startup_workpiece(model, JAKA_TABLE_TOP_M)
         scene.world.collision_objects.append(workpiece)
 
         # Keep supporting surface and workpiece visually distinct.

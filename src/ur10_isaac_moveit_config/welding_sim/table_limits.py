@@ -1,6 +1,34 @@
-"""Collision walls bounding the whole robot to the tabletop plus 100 mm."""
+"""Table placement and collision limits."""
+import json
+import math
+from pathlib import Path
+
+from ament_index_python.packages import get_package_share_directory
 
 JAKA_TABLE_TOP_M = .005
+
+
+DEFAULT_WORKPIECE_CELL = 'S8'
+
+
+def world_point(config, x_mm, y_mm, z_mm=0.):
+    transform = config['world_from_table']
+    angle = math.radians(transform['yaw_deg'])
+    tx, ty, tz = transform['translation_m']
+    return (tx + (math.cos(angle)*x_mm-math.sin(angle)*y_mm)/1000,
+            ty + (math.sin(angle)*x_mm+math.cos(angle)*y_mm)/1000,
+            tz + z_mm/1000)
+
+
+def default_workpiece_base(table_top=0.):
+    path = Path(get_package_share_directory('ur10_isaac_moveit_config')) / 'config/table_grid.json'
+    layout = json.loads(path.read_text())
+    grid = layout['grid']
+    column, row = DEFAULT_WORKPIECE_CELL[0], int(DEFAULT_WORKPIECE_CELL[1:])
+    x_mm = grid['offset_x_mm'] + (ord(column) - ord('A')) * grid['pitch_mm']
+    y_mm = grid['offset_y_mm'] + (row - 1) * grid['pitch_mm']
+    x, y, _ = world_point(layout, x_mm, y_mm)
+    return x, y, table_top
 
 
 def wall_specs():

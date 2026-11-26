@@ -10,7 +10,7 @@ let selection='face', token='', lastSequence=0, state=null, geometry=null, geome
 let geometryLoading=false, pendingWorkpiece=null;
 let busy=false, polling=false, logLines=0, toastTimer=null, objectSignature='', serverConnected=false;
 let yaw=.75, pitch=.48, zoom=1, dragging=null, dragMoved=false;
-let sceneFraming=null, robotAvailable=false, lastRobotSignature='';
+let sceneFraming=null, scannerAvailable=false, robotAvailable=false, lastRobotSignature='';
 let focusWorkpiece=false,hoverSeam=null;
 const SVG_NS='http://www.w3.org/2000/svg';
 const seamPicker=document.createElement('div');seamPicker.className='field-block seam-picker';
@@ -114,6 +114,9 @@ async function refreshGeometry(){
       if(pendingWorkpiece&&result.source!=='moveit')return;
       pendingWorkpiece=null;
       const oldShape=geometry?JSON.stringify(geometry.faces.map(f=>f.vertices)):null;
+      if(geometry?.preset!==result.preset&&result.seams?.some(seam=>seam.kind==='weld'&&seam.normal[2]<=.5)){
+        $('seam-filter').value='all';
+      }
       geometry=result;
       if(!result.edges.length&&selection==='edge'){
         selection='face';$('face').hidden=false;$('edge').hidden=true;
@@ -143,22 +146,33 @@ async function refreshGeometry(){
   }
 }
 function svg(tag,attrs={},parent){const node=document.createElementNS(SVG_NS,tag);for(const [key,value]of Object.entries(attrs))node.setAttribute(key,String(value));if(parent)parent.append(node);return node;}
+function updateScannerView(){
+  const scan=state?.scan_progress;
+  const available=Boolean(serverConnected&&scan?.state&&scan.state!=='UNAVAILABLE'&&scan.connected!==false&&
+    Number.isFinite(scan.observed_unix)&&Date.now()/1000-scan.observed_unix<25);
+  if(available===scannerAvailable)return;
+  scannerAvailable=available;
+  document.querySelector('.viewport-panel').classList.toggle('scanner-online',available);
+  sceneFraming=null;
+  if(geometry)draw();
+}
 function draw(){
   if(!geometry)return;
   const root=$('scene-svg');root.replaceChildren();
   const points=geometry.faces.flatMap(f=>f.vertices);
   const objectCenter=[0,1,2].map(i=>(Math.min(...points.map(p=>p[i]))+Math.max(...points.map(p=>p[i])))/2);
   const size=[0,1,2].map(i=>Math.max(...points.map(p=>p[i]))-Math.min(...points.map(p=>p[i])));
-  const robot=serverConnected&&state?.health?.robot?.available?state.health.robot:null;
+  const robot=scannerAvailable&&serverConnected&&state?.health?.robot?.available?state.health.robot:null;
   const showRobot=$('show-robot').checked&&robot&&!geometry.demo;
   const robotPoints=showRobot?robot.points:[];
   const framingPoints=[...points,...robotPoints.map(p=>p.position),...geometry.tool];
-  const margin=focusWorkpiece ? .015 : .12;
+  const closeUp=focusWorkpiece||!scannerAvailable;
+  const margin=closeUp ? .015 : .12;
   let low=[0,1,2].map(i=>Math.min(...framingPoints.map(p=>p[i]))-margin);
   let high=[0,1,2].map(i=>Math.max(...framingPoints.map(p=>p[i]))+margin);
   if(!sceneFraming||low.some((v,i)=>v<sceneFraming.low[i]-.05*sceneFraming.extent)||high.some((v,i)=>v>sceneFraming.high[i]+.05*sceneFraming.extent)){
     if(sceneFraming){low=low.map((v,i)=>Math.min(v,sceneFraming.low[i]));high=high.map((v,i)=>Math.max(v,sceneFraming.high[i]));}
-    sceneFraming={low,high,center:low.map((v,i)=>(v+high[i])/2),extent:Math.max(...low.map((v,i)=>high[i]-v),focusWorkpiece ? .05 : .3)};
+    sceneFraming={low,high,center:low.map((v,i)=>(v+high[i])/2),extent:Math.max(...low.map((v,i)=>high[i]-v),closeUp ? .05 : .3)};
   }
   const {center,extent}=sceneFraming,scale=360/extent*zoom;
   $('robot-status').textContent=robot?(geometry.demo?`Поза ${robotName()} получена · ожидаем деталь в MoveIt`:`${robotName()} · текущая поза из ROS`):serverConnected?(state?.health?.robot?.reason||'Ожидаем состояние робота'):'Нет связи с панелью';
@@ -341,7 +355,16 @@ function renderJob(){
   renderPlanningProgress(job);
   const chosen=job?.chosen_orientation;
   $('orientation-result').hidden=!chosen;
-  if(chosen)$('orientation-result').textContent=`Выбрано: наклон ${chosen.tilt_deg}° · направление ${chosen.direction_deg}° · доп. поворот ${chosen.roll_delta_deg}°`;
+  if(chosen){
+    const tilt=chosen.orientation_profile==='sweep'? `Переменный наклон до ${chosen.tilt_deg}°`:
+      chosen.orientation_profile==='radial'? `Наклон к центру кольца ${chosen.tilt_deg}°`:
+      ['orbit','pipe_plate'].includes(chosen.orientation_profile)? `Поворот по окружности · наклон ${chosen.tilt_deg}°`:
+      chosen.orientation_profile==='aimed'? `Наклон к шву до ${chosen.tilt_deg}°`:
+      `Наклон ${chosen.tilt_deg}° · направление ${chosen.direction_deg}°`;
+    const order=chosen.path_order?.endsWith('reverse')?' · обратный проход':
+      chosen.path_order?.startsWith('loop_quarter_')?' · другая точка входа':'';
+    $('orientation-result').textContent=`${tilt} · доп. поворот ${chosen.roll_delta_deg}°${order}`;
+  }
   $('operation-type').textContent=job?{preview:'ПРЕДПРОСМОТР',plan:'ПЛАНИРОВАНИЕ',execute:'ВЫПОЛНЕНИЕ'}[job.mode]:'ОЖИДАНИЕ';
   $('operation-phase').textContent=job?job.phase:'Всё начинается с выбора участка';
   $('operation-light').classList.toggle('active',active);$('activity-track').classList.toggle('running',active);$('activity-track').classList.toggle('done',job?.state==='succeeded');
@@ -362,6 +385,7 @@ function addLogs(entries){
 async function poll(){
   if(polling)return;polling=true;
   try{const data=await api('/api/state?since='+lastSequence);const oldJob=state?.job;state=data;token=data.token;serverConnected=true;
+    updateScannerView();
     const available=Boolean(data.health.robot?.available);
     if(available!==robotAvailable){sceneFraming=null;robotAvailable=available;}
     const robotSignature=JSON.stringify(data.health.robot||null);
@@ -373,7 +397,7 @@ async function poll(){
       $('object-id').textContent=$('object').value;refreshGeometry();}
     if(oldJob?.state==='running'&&data.job?.id===oldJob.id&&data.job.state!=='running')notify(data.job.state==='failed'?(data.job.error||'Операция завершилась с ошибкой'):'Операция завершена',data.job.state==='failed');
     renderJob();updateControls();
-  }catch{serverConnected=false;if(geometry)draw();updateControls();}finally{polling=false;}
+  }catch{serverConnected=false;updateScannerView();if(geometry)draw();updateControls();}finally{polling=false;}
 }
 async function start(mode){
   if(!validSettings()){notify('Проверьте значения параметров и начало / конец участка',true);return;}

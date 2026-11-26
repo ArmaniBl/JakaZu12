@@ -37,8 +37,8 @@ class WebWorkpieceTests(unittest.TestCase):
             with patch('welding_sim.web_control.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='',stderr='')) as run:
                 self.controller.replace_workpiece({'shape':shape})
                 argv=run.call_args.args[0]
-                index=argv.index('--center')+1
-                self.assertEqual([float(v) for v in argv[index:index+3]],[-.225,-.74,.005])
+                self.assertNotIn('--center', argv)
+                self.assertEqual(float(argv[argv.index('--table-top') + 1]), .005)
 
     def test_unknown_form_and_no_scene_are_rejected(self):
         with patch('welding_sim.web_control.subprocess.run') as run:
